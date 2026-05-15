@@ -96,18 +96,19 @@ def _read_interface_channel(iface: str) -> str:
     return ""
 
 
-def set_interface_channel(iface: str, channel: str | int, attempts: int = 2) -> dict:
-    """Set and verify a wireless interface channel before targeted capture/deauth."""
+def set_interface_channel(iface: str, channel: str | int, attempts: int = 1) -> dict:
+    """Set a wireless interface channel without disrupting monitor mode."""
     target = str(channel).strip()
     if not target.isdigit() or not (1 <= int(target) <= 165):
         raise HTTPException(status_code=400, detail="Channel must be between 1 and 165")
 
     commands = [
-        command_prefix() + ["iw", "dev", iface, "set", "channel", target],
         command_prefix() + ["iwconfig", iface, "channel", target],
+        command_prefix() + ["iw", "dev", iface, "set", "channel", target],
     ]
     errors: list[str] = []
     current = ""
+    command_succeeded = False
 
     for _ in range(attempts):
         for command in commands:
@@ -119,10 +120,12 @@ def set_interface_channel(iface: str, channel: str | int, attempts: int = 2) -> 
                     timeout=8,
                     check=False,
                 )
-                if result.returncode != 0 and result.stderr.strip():
-                    errors.append(result.stderr.strip())
+                if result.returncode == 0:
+                    command_succeeded = True
+                elif result.stderr.strip():
+                    errors.append(f"{' '.join(command)}: {result.stderr.strip()}")
             except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
-                errors.append(str(exc))
+                errors.append(f"{' '.join(command)}: {exc}")
         time.sleep(0.25)
         current = _read_interface_channel(iface)
         if current == target:
@@ -130,13 +133,32 @@ def set_interface_channel(iface: str, channel: str | int, attempts: int = 2) -> 
                 "success": True,
                 "requested": target,
                 "current": current,
+                "verified": True,
+                "method": "direct",
                 "stderr": "\n".join(dict.fromkeys(errors)),
             }
+
+    if command_succeeded:
+        warning = ""
+        if current and current != target:
+            warning = f"Requested channel {target}; readback currently reports channel {current}."
+        elif not current:
+            warning = "Requested channel set; readback unavailable."
+        return {
+            "success": True,
+            "requested": target,
+            "current": current,
+            "verified": False,
+            "method": "direct",
+            "stderr": "\n".join(dict.fromkeys([*errors, warning])),
+        }
 
     return {
         "success": False,
         "requested": target,
         "current": current,
+        "verified": False,
+        "method": "direct",
         "stderr": "\n".join(dict.fromkeys(errors)),
     }
 

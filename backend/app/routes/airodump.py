@@ -12,6 +12,7 @@ from ..utils import (
     parse_airodump_csv,
     safe_capture_path,
     sanitize_name,
+    set_interface_channel,
 )
 
 router = APIRouter(prefix="/airodump", tags=["airodump"])
@@ -51,6 +52,19 @@ def start_airodump(request: AirodumpStartRequest) -> dict:
     csv_path = f"{output_prefix}-01.csv"
     cap_path = f"{output_prefix}-01.cap"
     log_path = f"{output_prefix}.log"
+    channel_result = None
+
+    if request.channel and str(request.channel).strip().isdigit():
+        channel_result = set_interface_channel(request.interface, request.channel)
+        if not channel_result["success"]:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Could not lock {request.interface} to channel {channel_result['requested']} "
+                    f"(current: {channel_result['current'] or 'unknown'}). "
+                    f"{channel_result['stderr']}"
+                ).strip(),
+            )
 
     command = command_prefix() + [
         "airodump-ng",
@@ -82,6 +96,7 @@ def start_airodump(request: AirodumpStartRequest) -> dict:
         "log_path": log_path,
         "start_time": int(time.time()),
         "log_handle": log_handle,
+        "channel_result": channel_result,
     }
 
     return {
@@ -90,6 +105,7 @@ def start_airodump(request: AirodumpStartRequest) -> dict:
         "csv_path": csv_path,
         "cap_path": cap_path,
         "log_path": log_path,
+        "channel_result": channel_result,
         "command": " ".join(command),
     }
 
@@ -142,4 +158,5 @@ def airodump_results(job_id: str) -> dict:
         "running": bool(process and process.poll() is None),
         "data": data,
         "log_tail": log_tail,
+        "channel_result": job.get("channel_result"),
     }

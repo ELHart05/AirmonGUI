@@ -148,18 +148,62 @@
         >
           {{ running ? '⏳ Sending…' : '⚡ Execute Deauth' }}
         </button>
+        <button
+          v-if="running"
+          @click="cancelDeauth"
+          class="btn-secondary"
+        >
+          ⏹ Cancel Deauth
+        </button>
       </div>
     </div>
 
     <!-- Output -->
     <div v-if="output" class="card">
       <div class="card-header">
-        <h3 class="card-title">Command Output</h3>
+        <h3 class="card-title">Last Deauth Result</h3>
         <span :class="output.success ? 'badge-success' : 'badge-error'">
           {{ output.success ? 'Success' : `Exited (rc=${output.returncode})` }}
         </span>
       </div>
-      <div class="terminal">
+      <div class="overflow-x-auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Interface</th>
+              <th>BSSID</th>
+              <th>Client</th>
+              <th>Channel</th>
+              <th>Count</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text-cyber-400">{{ lastRun?.interface || form.interface }}</td>
+              <td>{{ lastRun?.bssid || form.bssid }}</td>
+              <td>{{ lastRun?.client || 'broadcast' }}</td>
+              <td class="text-amber-400">{{ output.channel?.current || lastRun?.channel || 'auto' }}</td>
+              <td>{{ lastRun?.count ?? form.count }}</td>
+              <td>
+                <span :class="output.success ? 'badge-success' : 'badge-error'">
+                  {{ output.success ? 'ok' : `rc=${output.returncode}` }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p v-if="output.stderr" class="mt-3 text-xs text-red-300">
+        {{ output.stderr.trim() }}
+      </p>
+      <p v-else-if="output.channel?.method" class="mt-3 text-xs text-slate-500">
+        Channel lock method: <span class="font-mono text-slate-300">{{ output.channel.method }}</span>
+      </p>
+      <p v-if="output.stdout" class="mt-2 text-xs text-slate-500">
+        Raw aireplay-ng output is still available in the Logs view.
+      </p>
+      <div v-if="output.stdout || output.stderr" class="terminal mt-3">
         <div v-if="output.stdout" class="whitespace-pre-wrap">{{ output.stdout }}</div>
         <div v-if="output.stderr" class="text-red-400 mt-2 whitespace-pre-wrap">
           {{ output.stderr }}
@@ -167,41 +211,109 @@
       </div>
     </div>
 
-    <!-- Live log history — updates every time a new deauth runs -->
+    <!-- Parsed aireplay output -->
+    <div v-if="deauthEvents.length" class="card">
+      <div class="card-header">
+        <h3 class="card-title">Deauth Events</h3>
+        <span class="badge-info">{{ deauthEvents.length }}</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="event in deauthEvents" :key="event.id">
+              <td class="text-cyber-400">{{ event.type }}</td>
+              <td>{{ event.message }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Structured run history -->
+    <div v-if="deauthRuns.length" class="card">
+      <div class="card-header">
+        <h3 class="card-title">Deauth Run History</h3>
+        <span class="badge-info">{{ deauthRuns.length }}</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Interface</th>
+              <th>BSSID</th>
+              <th>Client</th>
+              <th>CH</th>
+              <th>Count</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="run in deauthRuns" :key="run.id">
+              <td class="text-slate-500">{{ run.time }}</td>
+              <td class="text-cyber-400">{{ run.interface }}</td>
+              <td>{{ run.bssid }}</td>
+              <td>{{ run.client || 'broadcast' }}</td>
+              <td class="text-amber-400">{{ run.lockedChannel || run.channel || 'auto' }}</td>
+              <td>{{ run.count }}</td>
+              <td>
+                <span :class="run.success ? 'badge-success' : 'badge-error'">
+                  {{ run.success ? 'ok' : `rc=${run.returncode}` }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Shared command history summary -->
     <div v-if="deauthLogs.length" class="card">
       <div class="card-header">
-        <h3 class="card-title">Deauth Log History</h3>
+        <h3 class="card-title">Command History</h3>
         <div class="flex items-center gap-2">
           <span class="text-xs text-slate-500">{{ deauthLogs.length }} entr{{ deauthLogs.length === 1 ? 'y' : 'ies' }}</span>
           <button @click="logs.clear()" class="btn-ghost btn-sm text-xs text-red-400 hover:text-red-300">Clear</button>
         </div>
       </div>
-      <div class="space-y-2 max-h-72 overflow-y-auto">
-        <div
-          v-for="entry in deauthLogs"
-          :key="entry.id"
-          class="rounded-lg border px-3 py-2 text-xs"
-          :class="entry.success ? 'border-slate-700 bg-slate-800/40' : 'border-red-800/40 bg-red-950/20'"
-        >
-          <div class="flex items-center justify-between mb-1">
-            <span class="font-mono text-slate-400">{{ entry.command }}</span>
-            <div class="flex items-center gap-2 shrink-0 ml-2">
-              <span :class="entry.success ? 'badge-success' : 'badge-error'" class="text-xs">
-                {{ entry.success ? 'ok' : `rc=${entry.returncode}` }}
-              </span>
-              <span class="text-slate-600 text-xs">{{ formatLogTime(entry.time) }}</span>
-            </div>
-          </div>
-          <div v-if="entry.stdout" class="font-mono text-slate-300 whitespace-pre-wrap leading-relaxed">{{ entry.stdout.trim() }}</div>
-          <div v-if="entry.stderr" class="font-mono text-red-400 mt-1 whitespace-pre-wrap leading-relaxed">{{ entry.stderr.trim() }}</div>
-        </div>
+      <div class="overflow-x-auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Command</th>
+              <th>Status</th>
+              <th>Output</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="entry in deauthLogs" :key="entry.id">
+              <td class="text-slate-500">{{ formatLogTime(entry.time) }}</td>
+              <td class="font-mono text-slate-400">{{ entry.command }}</td>
+              <td>
+                <span :class="entry.success ? 'badge-success' : 'badge-error'">
+                  {{ entry.success ? 'ok' : `rc=${entry.returncode}` }}
+                </span>
+              </td>
+              <td class="text-slate-500">
+                {{ summarizeOutput(entry) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { api } from '../api/index.js'
 import { useInterfaces } from '../composables/useInterfaces.js'
 import { useLogs } from '../composables/useLogs.js'
@@ -228,6 +340,11 @@ const form = reactive({
 
 const running = ref(false)
 const output = ref(null)
+const deauthRuns = ref([])
+const lastRun = ref(null)
+const deauthJobId = ref('')
+let deauthPollTimer = null
+const deauthEvents = computed(() => parseDeauthEvents(output.value))
 
 function applyTarget() {
   form.bssid = targetBssid.value
@@ -256,17 +373,30 @@ async function execute() {
 
   running.value = true
   output.value = null
+  const run = {
+    id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+    time: new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    interface: form.interface,
+    bssid: form.bssid,
+    client: form.client || '',
+    count: form.count,
+    channel: form.channel || '',
+    lockedChannel: '',
+    success: false,
+    returncode: '',
+  }
   try {
-    const data = await api.aireplay.deauth({
+    const started = await api.aireplay.startDeauth({
       interface: form.interface,
       bssid: form.bssid,
       client: form.client || null,
       count: form.count,
       channel: form.channel ? parseInt(form.channel) : null,
     })
-    output.value = data
-    logs.add('aireplay-ng --deauth', data)
-    if (data.success) {
+    deauthJobId.value = started.job_id
+    output.value = { ...started, success: true, returncode: null, stdout: '', stderr: '' }
+    await pollDeauthJob(run)
+    if (output.value?.success) {
       toast.success('Deauth command finished')
     } else {
       toast.warning('Command finished with errors — check output')
@@ -278,14 +408,91 @@ async function execute() {
   }
 }
 
+async function pollDeauthJob(run) {
+  clearTimeout(deauthPollTimer)
+  if (!deauthJobId.value) return
+  const data = await api.aireplay.deauthStatus(deauthJobId.value)
+  output.value = data
+  if (data.running) {
+    await new Promise((resolve) => {
+      deauthPollTimer = setTimeout(resolve, 500)
+    })
+    return pollDeauthJob(run)
+  }
+  run.success = Boolean(data.success)
+  run.returncode = data.returncode
+  run.lockedChannel = data.channel?.current || ''
+  lastRun.value = run
+  deauthRuns.value = [run, ...deauthRuns.value].slice(0, 12)
+  logs.add(data.stopped ? 'aireplay-ng --deauth cancelled' : 'aireplay-ng --deauth', data)
+  deauthJobId.value = ''
+}
+
+async function cancelDeauth() {
+  clearTimeout(deauthPollTimer)
+  if (deauthJobId.value) {
+    try {
+      output.value = await api.aireplay.stopDeauth(deauthJobId.value)
+      logs.add('aireplay-ng --deauth cancelled', output.value)
+      toast.info('Deauth cancelled')
+    } catch (err) {
+      toast.error(err.message)
+    }
+  }
+  deauthJobId.value = ''
+  running.value = false
+}
+
 onMounted(() => {
   if (selectedInterface.value) form.interface = selectedInterface.value
   if (targetBssid.value) form.bssid = targetBssid.value
   if (targetChannel.value) form.channel = String(targetChannel.value)
 })
 
+onUnmounted(() => {
+  clearTimeout(deauthPollTimer)
+})
+
 function formatLogTime(iso) {
   if (!iso) return ''
   return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function summarizeOutput(entry) {
+  const text = `${entry.stdout || ''} ${entry.stderr || ''}`.trim()
+  if (!text) return 'no output'
+  const firstLine = text.split(/\r?\n/).find((line) => line.trim())
+  return firstLine ? firstLine.slice(0, 120) : 'output available'
+}
+
+function parseDeauthEvents(result) {
+  if (!result) return []
+  const text = `${result.stdout || ''}\n${result.stderr || ''}`.trim()
+  if (!text) {
+    return [{
+      id: 'empty',
+      type: result.success ? 'complete' : 'error',
+      message: result.success ? 'Command completed without text output.' : 'Command failed without text output.',
+    }]
+  }
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-12)
+    .map((line, index) => ({
+      id: `${index}-${line}`,
+      type: classifyDeauthLine(line),
+      message: line,
+    }))
+}
+
+function classifyDeauthLine(line) {
+  const lower = line.toLowerCase()
+  if (lower.includes('channel')) return 'channel'
+  if (lower.includes('error') || lower.includes('fail')) return 'error'
+  if (lower.includes('waiting') || lower.includes('send')) return 'transmit'
+  if (lower.includes('ack') || lower.includes('deauth')) return 'frame'
+  return 'output'
 }
 </script>

@@ -35,8 +35,7 @@ export const api = {
     list: () => request('/interfaces'),
     monitor: (iface, action) =>
       request('/monitor', { method: 'POST', body: { interface: iface, action } }),
-    checkKill: (iface) =>
-      request('/checkkill', { method: 'POST', body: { interface: iface } }),
+    checkKill: () => request('/checkkill', { method: 'POST' }),
   },
 
   airodump: {
@@ -47,7 +46,12 @@ export const api = {
   },
 
   aireplay: {
-    deauth: (params) => request('/aireplay/deauth', { method: 'POST', body: params }),
+    deauth: (params, options = {}) =>
+      request('/aireplay/deauth', { method: 'POST', body: params, ...options }),
+    startDeauth: (params) => request('/aireplay/deauth/start', { method: 'POST', body: params }),
+    deauthStatus: (jobId) => request(`/aireplay/deauth/${encodeURIComponent(jobId)}/status`),
+    stopDeauth: (jobId) =>
+      request(`/aireplay/deauth/${encodeURIComponent(jobId)}/stop`, { method: 'POST' }),
   },
 
   aircrack: {

@@ -69,8 +69,8 @@
         <button @click="handleRefresh" :disabled="loading" class="btn-ghost">
           {{ loading ? '…' : '↻ Refresh Interfaces' }}
         </button>
-        <button @click="handleCheckKill" :disabled="!selectedInterface || loading" class="btn-ghost">
-          {{ selectedInterface ? `⚡ Release ${selectedInterface}` : '⚡ Select Interface' }}
+        <button @click="handleCheckKill" :disabled="loading" class="btn-ghost">
+          ⚡ Check Kill Process
         </button>
       </div>
     </div>
@@ -126,7 +126,7 @@ import { useNav } from '../composables/useNav.js'
 import { useScan } from '../composables/useScan.js'
 
 const { navigate } = useNav()
-const { interfaces, selectedInterface, loading, refresh, checkKill } = useInterfaces()
+const { interfaces, loading, refresh, checkKill } = useInterfaces()
 const { jobs } = useScan()
 
 const tools = ref({})
@@ -147,8 +147,7 @@ async function handleRefresh() {
 }
 
 async function handleCheckKill() {
-  if (!selectedInterface.value) return
-  await checkKill(selectedInterface.value)
+  await checkKill()
 }
 
 onMounted(async () => {

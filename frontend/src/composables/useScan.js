@@ -42,7 +42,10 @@ export function useScan() {
       logTail.value = ''
       activeJobId.value = data.job_id
       isRunning.value = true
-      logs.add('airodump-ng start', { stdout: `Command: ${data.command}`, success: true })
+      const channelStatus = data.channel_result?.current
+        ? `Locked channel: ${data.channel_result.current}\n`
+        : ''
+      logs.add('airodump-ng start', { stdout: `${channelStatus}Command: ${data.command}`, success: true })
       toast.success('Scan started')
       await loadJobs()
     } catch (err) {

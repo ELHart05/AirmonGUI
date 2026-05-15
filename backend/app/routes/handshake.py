@@ -11,12 +11,50 @@ from ..utils import (
     clean_terminal_output,
     command_prefix,
     new_job_id,
+    parse_airodump_csv,
     safe_capture_path,
     sanitize_name,
     set_interface_channel,
 )
 
 router = APIRouter(prefix="/handshake", tags=["handshake"])
+
+
+def _resolve_bssid_channel(interface: str, bssid: str) -> str:
+    """Briefly hop channels with airodump-ng to refresh the AP channel before locked capture."""
+    prefix = safe_capture_path(f"resolve_{sanitize_name(bssid.replace(':', ''))}_{int(time.time())}")
+    csv_path = f"{prefix}-01.csv"
+    command = command_prefix() + [
+        "airodump-ng",
+        "--bssid", bssid,
+        "--output-format", "csv",
+        "--write", prefix,
+        interface,
+    ]
+    try:
+        process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+        time.sleep(6)
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+        data = parse_airodump_csv(csv_path)
+        for network in data.get("networks", []):
+            if network.get("BSSID", "").upper() == bssid.upper():
+                channel = str(network.get("channel", "")).strip()
+                if channel.isdigit():
+                    return channel
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    finally:
+        for suffix in ("-01.csv", "-01.kismet.csv", "-01.kismet.netxml", "-01.log.csv"):
+            try:
+                os.remove(f"{prefix}{suffix}")
+            except OSError:
+                pass
+    return ""
 
 
 @router.post("/start")
@@ -31,7 +69,10 @@ def start_handshake_capture(request: HandshakeCaptureRequest) -> dict:
     csv_path = f"{output_prefix}-01.csv"
     log_path = f"{output_prefix}.log"
 
-    channel_result = set_interface_channel(request.interface, request.channel)
+    resolved_channel = _resolve_bssid_channel(request.interface, request.bssid)
+    target_channel = resolved_channel or request.channel
+
+    channel_result = set_interface_channel(request.interface, target_channel)
     if not channel_result["success"]:
         raise HTTPException(
             status_code=409,
@@ -44,7 +85,7 @@ def start_handshake_capture(request: HandshakeCaptureRequest) -> dict:
 
     command = command_prefix() + [
         "airodump-ng",
-        "-c", request.channel,
+        "-c", target_channel,
         "--bssid", request.bssid,
         "--output-format", "pcap,csv",
         "--write", output_prefix,
@@ -59,7 +100,9 @@ def start_handshake_capture(request: HandshakeCaptureRequest) -> dict:
         "type": "handshake",
         "interface": request.interface,
         "bssid": request.bssid,
-        "channel": request.channel,
+        "channel": target_channel,
+        "requested_channel": request.channel,
+        "resolved_channel": resolved_channel,
         "process": process,
         "command": " ".join(command),
         "output_prefix": output_prefix,
@@ -73,9 +116,13 @@ def start_handshake_capture(request: HandshakeCaptureRequest) -> dict:
 
     return {
         "job_id": job_id,
+        "interface": request.interface,
         "cap_path": cap_path,
+        "csv_path": csv_path,
         "bssid": request.bssid,
-        "channel": request.channel,
+        "channel": target_channel,
+        "requested_channel": request.channel,
+        "resolved_channel": resolved_channel,
         "channel_result": channel_result,
         "command": " ".join(command),
     }
@@ -95,6 +142,7 @@ def handshake_status(job_id: str) -> dict:
     process = job.get("process")
     running = bool(process and process.poll() is None)
     cap_path = job.get("cap_path", "")
+    csv_path = job.get("csv_path", "")
     log_path = job.get("log_path", "")
 
     # Primary: look for "WPA handshake: XX:XX..." line in airodump log
@@ -134,6 +182,7 @@ def handshake_status(job_id: str) -> dict:
     cap_size = 0
     if cap_path and os.path.exists(cap_path):
         cap_size = os.path.getsize(cap_path)
+    data = parse_airodump_csv(csv_path) if csv_path else {"networks": [], "clients": []}
 
     return {
         "job_id": job_id,
@@ -143,9 +192,12 @@ def handshake_status(job_id: str) -> dict:
         "cap_size": cap_size,
         "bssid": job.get("bssid"),
         "channel": job.get("channel"),
+        "requested_channel": job.get("requested_channel"),
+        "resolved_channel": job.get("resolved_channel"),
         "channel_result": job.get("channel_result"),
         "elapsed": int(time.time()) - job.get("start_time", int(time.time())),
         "log_tail": log_tail,
+        "data": data,
     }
 
 

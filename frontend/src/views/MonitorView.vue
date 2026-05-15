@@ -75,15 +75,24 @@
           <span v-if="stoppingMonitor" class="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1"></span>
           {{ stoppingMonitor ? 'Stopping…' : '⏹ Stop Monitor Mode' }}
         </button>
-        <button @click="handleCheckKill" :disabled="!selectedInterface || loading" class="btn-danger">
+        <button
+          @click="handleReleaseInterface"
+          :disabled="!selectedInterface || !selectedIface?.monitor_mode || loading"
+          class="btn-secondary"
+        >
+          <span v-if="releasingInterface" class="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1"></span>
+          {{ releasingInterface ? 'Releasing…' : '🔓 Release Interface' }}
+        </button>
+        <button @click="handleCheckKill" :disabled="loading" class="btn-danger">
           <span v-if="killingProcesses" class="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1"></span>
-          {{ killingProcesses ? 'Releasing…' : selectedInterface ? `⚡ Release ${selectedInterface}` : '⚡ Select interface' }}
+          {{ killingProcesses ? 'Checking…' : '⚡ Check Kill Process' }}
         </button>
       </div>
       <p class="text-xs text-slate-500 mt-3">
         Select an interface in the table above, then click Start or Stop. Monitor mode allows
-        packet injection and capture. <strong class="text-slate-400">Release</strong> tells NetworkManager
-        and wpa_supplicant to stop managing only the selected interface — other interfaces stay connected.
+        packet injection and capture. <strong class="text-slate-400">Check Kill Process</strong> runs the global
+        <code class="text-slate-300">airmon-ng check kill</code>. Use <strong class="text-slate-400">Release Interface</strong>
+        to stop monitor mode for the selected monitor interface.
       </p>
     </div>
 
@@ -106,7 +115,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useInterfaces } from '../composables/useInterfaces.js'
 
 const { interfaces, selectedInterface, loading, refresh, startMonitor, stopMonitor, checkKill, select } =
@@ -116,6 +125,10 @@ const lastOutput = ref(null)
 const startingMonitor = ref(false)
 const stoppingMonitor = ref(false)
 const killingProcesses = ref(false)
+const releasingInterface = ref(false)
+const selectedIface = computed(() =>
+  interfaces.value.find((iface) => iface.interface === selectedInterface.value)
+)
 
 async function handleStart() {
   startingMonitor.value = true
@@ -142,15 +155,27 @@ async function handleStop() {
 }
 
 async function handleCheckKill() {
-  if (!selectedInterface.value) return
   killingProcesses.value = true
   try {
-    const data = await checkKill(selectedInterface.value)
+    const data = await checkKill()
     lastOutput.value = data
   } catch {
     // toast already shown
   } finally {
     killingProcesses.value = false
+  }
+}
+
+async function handleReleaseInterface() {
+  if (!selectedInterface.value) return
+  releasingInterface.value = true
+  try {
+    const data = await stopMonitor(selectedInterface.value)
+    lastOutput.value = data
+  } catch {
+    // toast already shown
+  } finally {
+    releasingInterface.value = false
   }
 }
 </script>

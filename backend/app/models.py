@@ -17,14 +17,6 @@ class MonitorRequest(BaseModel):
     action: str = Field(..., examples=["start"])
 
 
-class CheckKillRequest(BaseModel):
-    interface: str = Field(
-        ...,
-        description="Wireless interface whose interfering processes should be released.",
-        examples=["wlan0"],
-    )
-
-
 class DeauthRequest(BaseModel):
     interface: str
     bssid: str

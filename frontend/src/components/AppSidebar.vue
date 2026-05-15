@@ -82,11 +82,11 @@
       </button>
       <button
         @click="handleCheckKill"
-        :disabled="!selectedInterface || loading"
+        :disabled="loading"
         class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono font-medium text-slate-400 hover:text-cyber-100 hover:bg-cyber-500/10 transition-all disabled:opacity-50"
       >
         <AlertTriangle :class="killing && 'animate-pulse'" class="w-3.5 h-3.5 shrink-0" />
-        <span>{{ killing ? 'Releasing…' : selectedInterface ? `Release ${selectedInterface}` : 'Select interface' }}</span>
+        <span class="min-w-0 truncate">{{ killing ? 'Checking…' : 'Check Kill Process' }}</span>
       </button>
     </div>
   </aside>
@@ -117,7 +117,7 @@ import { useNav } from '../composables/useNav.js'
 import { useScan } from '../composables/useScan.js'
 
 const { currentView, navigate, sidebarOpen } = useNav()
-const { loading, refresh, checkKill, selectedInterface } = useInterfaces()
+const { loading, refresh, checkKill } = useInterfaces()
 const { isRunning: isScanning } = useScan()
 const { cracking: isCracking } = useCrack()
 
@@ -142,10 +142,9 @@ async function handleRefresh() {
 }
 
 async function handleCheckKill() {
-  if (!selectedInterface.value) return
   killing.value = true
   try {
-    await checkKill(selectedInterface.value)
+    await checkKill()
   } finally {
     killing.value = false
   }

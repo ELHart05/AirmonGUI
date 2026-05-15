@@ -244,7 +244,47 @@
         </div>
       </div>
 
-      <!-- Live log -->
+      <!-- Capture telemetry -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Capture Telemetry</h3>
+          <span class="text-xs text-slate-500 font-mono truncate max-w-xs">
+            {{ captureJob?.command }}
+          </span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Interface</th>
+                <th>BSSID</th>
+                <th>Channel</th>
+                <th>Elapsed</th>
+                <th>Capture Size</th>
+                <th>Handshake</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-cyber-400">{{ captureJob?.interface || form.interface }}</td>
+                <td>{{ captureJob?.bssid || form.bssid }}</td>
+                <td class="text-amber-400">
+                  {{ captureStatus?.channel_result?.current || captureJob?.channel || form.channel }}
+                </td>
+                <td>{{ captureStatus?.elapsed ?? 0 }}s</td>
+                <td>{{ formatSize(captureStatus?.cap_size || 0) }}</td>
+                <td>
+                  <span :class="handshakeDetected ? 'badge-success' : 'badge-warning'">
+                    {{ handshakeDetected ? 'captured' : 'waiting' }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Live capture log -->
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">Live Capture Log</h3>
@@ -259,6 +299,110 @@
             :class="handshakeDetected && 'text-green-300'"
           >{{ captureStatus.log_tail }}</div>
           <div v-else class="text-slate-500 italic">Waiting for airodump-ng output…</div>
+        </div>
+      </div>
+
+      <!-- Captured network table -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">
+            Target Capture Table
+            <span v-if="handshakeNetworks.length" class="badge-info ml-2">{{ handshakeNetworks.length }}</span>
+          </h3>
+        </div>
+        <div v-if="handshakeNetworks.length" class="overflow-x-auto">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>BSSID</th>
+                <th>ESSID</th>
+                <th>CH</th>
+                <th>Signal</th>
+                <th>Privacy</th>
+                <th>Beacons</th>
+                <th>#Data</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in handshakeNetworks" :key="pick(row, ['BSSID'])">
+                <td class="text-cyber-400 font-bold">{{ pick(row, ['BSSID']) }}</td>
+                <td class="text-white font-semibold">{{ pick(row, ['ESSID', 'essid']) || '&lt;hidden&gt;' }}</td>
+                <td class="text-amber-400">{{ pick(row, ['channel', 'Channel', ' channel']) }}</td>
+                <td>{{ pick(row, ['Power', 'PWR', 'power']) }} dBm</td>
+                <td>{{ pick(row, ['Privacy', 'privacy']) }}</td>
+                <td>{{ pick(row, ['Beacons', 'beacons']) }}</td>
+                <td>{{ pick(row, ['# Data', '#Data', 'data']) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else class="py-4 text-center text-slate-500 text-sm">
+          Waiting for airodump-ng to write target network rows.
+        </div>
+      </div>
+
+      <!-- Captured client table -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">
+            Client Table
+            <span v-if="handshakeClients.length" class="badge-info ml-2">{{ handshakeClients.length }}</span>
+          </h3>
+        </div>
+        <div v-if="handshakeClients.length" class="overflow-x-auto">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Station MAC</th>
+                <th>BSSID</th>
+                <th>Signal</th>
+                <th>Frames</th>
+                <th>Probes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in handshakeClients" :key="pick(row, ['Station MAC'])">
+                <td class="text-purple-400 font-bold">{{ pick(row, ['Station MAC']) }}</td>
+                <td class="text-cyber-400">{{ pick(row, ['BSSID']) }}</td>
+                <td>{{ pick(row, ['Power', 'PWR', 'power']) }}</td>
+                <td>{{ pick(row, ['# packets', 'Packets', 'Frames']) }}</td>
+                <td class="text-slate-400">{{ pick(row, ['Probed ESSIDs', 'probed']) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else class="py-4 text-center text-slate-500 text-sm">
+          No clients captured yet.
+        </div>
+      </div>
+
+      <!-- Capture events -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Capture Events</h3>
+          <span class="badge-info">{{ captureEvents.length }}</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Event</th>
+                <th>Details</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="event in captureEvents" :key="event.name">
+                <td class="text-cyber-400">{{ event.name }}</td>
+                <td>{{ event.details }}</td>
+                <td>
+                  <span :class="event.ok ? 'badge-success' : 'badge-neutral'">
+                    {{ event.status }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -319,6 +463,14 @@
             {{ deauthing ? '⏳ Sending…' : '⚡ Send Deauth Burst' }}
           </button>
 
+          <button
+            v-if="deauthing"
+            @click="cancelDeauth"
+            class="btn-secondary"
+          >
+            ⏹ Cancel Deauth
+          </button>
+
           <!-- Stop button — only shown while auto-deauth is running -->
           <button
             v-if="autoDeauth"
@@ -351,10 +503,87 @@
           </span>
         </div>
 
-        <div v-if="deauthResult" class="terminal text-xs mt-1">
-          <div :class="deauthResult.success ? 'text-green-400' : 'text-red-400'" class="whitespace-pre-wrap">
-            {{ deauthResult.stdout || deauthResult.stderr }}
+        <div v-if="deauthEvents.length" class="mt-3 overflow-x-auto">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Message</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="event in deauthEvents" :key="event.id">
+                <td class="text-cyber-400">{{ event.type }}</td>
+                <td>{{ event.message }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div v-if="deauthResult" class="mt-3 overflow-x-auto">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Interface</th>
+                <th>Target</th>
+                <th>Client</th>
+                <th>Channel</th>
+                <th>Count</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-cyber-400">{{ deauthForm.interface }}</td>
+                <td>{{ form.bssid }}</td>
+                <td>{{ deauthForm.client || 'broadcast' }}</td>
+                <td class="text-amber-400">{{ deauthResult.channel?.current || form.channel }}</td>
+                <td>{{ deauthForm.count }}</td>
+                <td>
+                  <span :class="deauthResult.success ? 'badge-success' : 'badge-error'">
+                    {{ deauthResult.success ? 'ok' : `rc=${deauthResult.returncode}` }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-if="deauthResult.stderr" class="mt-2 text-xs text-red-300">
+            {{ deauthResult.stderr.trim() }}
+          </p>
+        </div>
+
+        <div v-if="deauthResult?.stdout || deauthResult?.stderr" class="terminal text-xs mt-3">
+          <div v-if="deauthResult.stdout" class="whitespace-pre-wrap">{{ deauthResult.stdout }}</div>
+          <div v-if="deauthResult.stderr" class="text-red-400 mt-2 whitespace-pre-wrap">
+            {{ deauthResult.stderr }}
           </div>
+        </div>
+
+        <div v-if="deauthRuns.length" class="mt-3 overflow-x-auto">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Client</th>
+                <th>CH</th>
+                <th>Count</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="run in deauthRuns" :key="run.id">
+                <td class="text-slate-500">{{ run.time }}</td>
+                <td>{{ run.client || 'broadcast' }}</td>
+                <td class="text-amber-400">{{ run.lockedChannel || run.channel }}</td>
+                <td>{{ run.count }}</td>
+                <td>
+                  <span :class="run.success ? 'badge-success' : 'badge-error'">
+                    {{ run.success ? 'ok' : `rc=${run.returncode}` }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         <p class="text-xs text-slate-500 mt-2">
@@ -431,7 +660,7 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { api } from '../api/index.js'
 import { useHandshake } from '../composables/useHandshake.js'
 import { useInterfaces } from '../composables/useInterfaces.js'
@@ -482,11 +711,14 @@ const deauthForm = reactive({
 })
 const deauthing = ref(false)
 const deauthResult = ref(null)
+const deauthRuns = ref([])
 const lastDeauthTime = ref('')
 const autoDeauth = ref(false)
 const autoInterval = ref(5)
+const deauthJobId = ref('')
 let autoTimer = null
 let pollTimer = null
+let deauthPollTimer = null
 
 // ─── Capture workflow ────────────────────────────────────────────────────
 async function startCapture() {
@@ -535,23 +767,151 @@ async function sendDeauth() {
   }
   deauthing.value = true
   deauthResult.value = null
+  const run = {
+    id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+    time: new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    client: deauthForm.client || '',
+    channel: form.channel,
+    lockedChannel: '',
+    count: deauthForm.count,
+    success: false,
+    returncode: '',
+  }
   try {
-    const data = await api.aireplay.deauth({
+    const started = await api.aireplay.startDeauth({
       interface: deauthForm.interface,
       bssid: form.bssid,
       client: deauthForm.client || null,
       count: deauthForm.count,
       channel: form.channel ? parseInt(form.channel) : null,
     })
-    deauthResult.value = data
+    deauthJobId.value = started.job_id
+    deauthResult.value = { ...started, success: true, returncode: null, stdout: '', stderr: '' }
     lastDeauthTime.value = new Date().toLocaleTimeString()
-    logs.add('aireplay-ng --deauth', data)
-    if (!data.success) toast.warning('Deauth returned non-zero exit code')
+    await pollDeauthJob(run)
   } catch (err) {
     toast.error(err.message)
   } finally {
     deauthing.value = false
   }
+}
+
+async function pollDeauthJob(run) {
+  clearTimeout(deauthPollTimer)
+  if (!deauthJobId.value) return
+  const data = await api.aireplay.deauthStatus(deauthJobId.value)
+  deauthResult.value = data
+  if (data.running) {
+    await new Promise((resolve) => {
+      deauthPollTimer = setTimeout(resolve, 500)
+    })
+    return pollDeauthJob(run)
+  }
+  run.success = Boolean(data.success)
+  run.returncode = data.returncode
+  run.lockedChannel = data.channel?.current || ''
+  deauthRuns.value = [run, ...deauthRuns.value].slice(0, 10)
+  logs.add(data.stopped ? 'aireplay-ng --deauth cancelled' : 'aireplay-ng --deauth', data)
+  if (data.stopped) toast.info('Deauth cancelled')
+  else if (!data.success) toast.warning('Deauth returned non-zero exit code')
+  deauthJobId.value = ''
+}
+
+async function cancelDeauth() {
+  autoDeauth.value = false
+  clearAutoDeauth()
+  clearTimeout(deauthPollTimer)
+  if (deauthJobId.value) {
+    try {
+      deauthResult.value = await api.aireplay.stopDeauth(deauthJobId.value)
+      logs.add('aireplay-ng --deauth cancelled', deauthResult.value)
+      toast.info('Deauth cancelled')
+    } catch (err) {
+      toast.error(err.message)
+    }
+  }
+  deauthJobId.value = ''
+  deauthing.value = false
+}
+
+const captureEvents = computed(() => {
+  const events = [
+    {
+      name: 'Target locked',
+      details: `${captureJob.value?.bssid || form.bssid} on channel ${captureJob.value?.channel || form.channel}`,
+      status: captureJob.value ? 'ready' : 'pending',
+      ok: Boolean(captureJob.value),
+    },
+    {
+      name: 'Channel set',
+      details: activeChannelResult.value?.current
+        ? `requested ${activeChannelResult.value.requested}, readback ${activeChannelResult.value.current}`
+        : activeChannelResult.value?.requested
+          ? `requested ${activeChannelResult.value.requested}, readback unavailable`
+          : 'waiting for channel status',
+      status: activeChannelResult.value?.verified ? 'verified' : activeChannelResult.value?.success ? 'set' : 'pending',
+      ok: Boolean(activeChannelResult.value?.success),
+    },
+    {
+      name: 'Capture file',
+      details: captureStatus.value?.cap_path || captureJob.value?.cap_path || 'not created yet',
+      status: captureStatus.value?.cap_size ? formatSize(captureStatus.value.cap_size) : 'waiting',
+      ok: Boolean(captureStatus.value?.cap_size),
+    },
+    {
+      name: 'Handshake',
+      details: handshakeDetected.value ? 'WPA handshake detected in capture' : 'waiting for reconnect / EAPOL frames',
+      status: handshakeDetected.value ? 'captured' : 'watching',
+      ok: handshakeDetected.value,
+    },
+  ]
+  return events
+})
+
+const handshakeNetworks = computed(() => captureStatus.value?.data?.networks || [])
+const handshakeClients = computed(() => captureStatus.value?.data?.clients || [])
+const deauthEvents = computed(() => parseDeauthEvents(deauthResult.value))
+const activeChannelResult = computed(() =>
+  captureStatus.value?.channel_result || captureJob.value?.channel_result || null
+)
+
+function pick(obj, keys) {
+  for (const key of keys) {
+    const value = obj?.[key]
+    if (value && String(value).trim()) return String(value).trim()
+  }
+  return ''
+}
+
+function parseDeauthEvents(result) {
+  if (!result) return []
+  const text = `${result.stdout || ''}\n${result.stderr || ''}`.trim()
+  if (!text) {
+    return [{
+      id: 'empty',
+      type: result.success ? 'complete' : 'error',
+      message: result.success ? 'Command completed without text output.' : 'Command failed without text output.',
+    }]
+  }
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-10)
+    .map((line, index) => ({
+      id: `${index}-${line}`,
+      type: classifyDeauthLine(line),
+      message: line,
+    }))
+}
+
+function classifyDeauthLine(line) {
+  const lower = line.toLowerCase()
+  if (lower.includes('waiting') || lower.includes('send')) return 'transmit'
+  if (lower.includes('channel')) return 'channel'
+  if (lower.includes('error') || lower.includes('fail')) return 'error'
+  if (lower.includes('ack') || lower.includes('deauth')) return 'frame'
+  return 'output'
 }
 
 function startAutoDeauth() {
@@ -607,6 +967,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearInterval(pollTimer)
+  clearTimeout(deauthPollTimer)
   clearAutoDeauth()
 })
 </script>

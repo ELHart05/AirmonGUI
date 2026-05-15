@@ -144,7 +144,7 @@
     </div>
 
     <!-- Live scan log -->
-    <div v-if="logTail" class="card">
+    <!--<div v-if="logTail" class="card">
       <div class="card-header">
         <h3 class="card-title">Live Capture Log</h3>
         <span class="text-xs text-slate-500 font-mono truncate max-w-xs">
@@ -154,7 +154,7 @@
       <div class="terminal max-h-52 overflow-y-auto whitespace-pre">
         {{ logTail }}
       </div>
-    </div>
+    </div>-->
 
     <!-- Networks table -->
     <div class="card">

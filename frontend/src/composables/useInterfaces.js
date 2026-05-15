@@ -61,18 +61,12 @@ export function useInterfaces() {
     }
   }
 
-  async function checkKill(iface) {
-    if (!iface) {
-      const err = new Error('Select an interface before releasing background services')
-      toast.error(err.message)
-      throw err
-    }
-
+  async function checkKill() {
     loading.value = true
     try {
-      const data = await api.interfaces.checkKill(iface)
-      logs.add(`release services for ${iface}`, data)
-      toast.success(`Released ${iface} from background services`)
+      const data = await api.interfaces.checkKill()
+      logs.add('airmon-ng check kill', data)
+      toast.success('Check-kill process completed')
       return data
     } catch (err) {
       toast.error(err.message)
