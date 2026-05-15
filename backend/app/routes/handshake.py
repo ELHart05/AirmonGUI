@@ -16,30 +16,10 @@ from ..utils import (
     safe_capture_path,
     sanitize_name,
     set_interface_channel,
+    stop_conflicting_airodump_jobs,
 )
 
 router = APIRouter(prefix="/handshake", tags=["handshake"])
-
-
-def _stop_conflicting_airodump_jobs(interface: str) -> list[str]:
-    """Stop scan jobs that would keep channel-hopping the target interface."""
-    stopped: list[str] = []
-    for job_id, job in JOBS.items():
-        if job.get("type") != "airodump" or job.get("interface") != interface:
-            continue
-        process = job.get("process")
-        if not process or process.poll() is not None:
-            continue
-        process.terminate()
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-        log_handle = job.get("log_handle")
-        if log_handle and not log_handle.closed:
-            log_handle.close()
-        stopped.append(job_id)
-    return stopped
 
 
 def _latest_airodump_path(output_prefix: str, extension: str, start_time: int) -> str:
@@ -151,7 +131,7 @@ def start_handshake_capture(request: HandshakeCaptureRequest) -> dict:
                 detail=f"A handshake capture is already running on {request.interface}",
             )
 
-    stopped_scan_jobs = _stop_conflicting_airodump_jobs(request.interface)
+    stopped_scan_jobs = stop_conflicting_airodump_jobs(request.interface)
     resolved_channel = _resolve_bssid_channel(request.interface, request.bssid)
     target_channel = resolved_channel or request.channel
 

@@ -445,11 +445,13 @@ import { api } from '../api/index.js'
 import { useHandshake } from '../composables/useHandshake.js'
 import { useInterfaces } from '../composables/useInterfaces.js'
 import { useNav } from '../composables/useNav.js'
+import { useScan } from '../composables/useScan.js'
 import { useTarget } from '../composables/useTarget.js'
 import { useToast } from '../composables/useToast.js'
 import { useLogs } from '../composables/useLogs.js'
 
 const { interfaces } = useInterfaces()
+const { loadJobs: loadScanJobs } = useScan()
 const { bssid, essid, channel, setCrackFile, pmf: targetPmf } = useTarget()
 const { navigate } = useNav()
 const toast = useToast()
@@ -557,6 +559,14 @@ async function sendDeauth() {
       count: deauthForm.count,
       channel: deauthChannel.value ? parseInt(deauthChannel.value) : null,
     })
+    if (started.stopped_scan_jobs?.length) {
+      await loadScanJobs()
+      logs.add('airodump-ng stop (auto)', {
+        stdout: `Stopped active scan job${started.stopped_scan_jobs.length > 1 ? 's' : ''} ${started.stopped_scan_jobs.join(', ')} before deauth channel lock.`,
+        success: true,
+      })
+      toast.info('Active network scan stopped so the interface could switch channels')
+    }
     deauthJobId.value = started.job_id
     deauthResult.value = { ...started, success: true, returncode: null, stdout: '', stderr: '' }
     lastDeauthTime.value = new Date().toLocaleTimeString()

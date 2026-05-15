@@ -9,6 +9,7 @@ from typing import List
 from fastapi import HTTPException
 
 from .config import CAPTURE_DIR
+from .state import JOBS
 
 _ANSI_RE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 _CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -148,6 +149,27 @@ def set_interface_channel(iface: str, channel: str | int, attempts: int = 3) -> 
         "method": "direct",
         "stderr": "\n".join(dict.fromkeys(errors)),
     }
+
+
+def stop_conflicting_airodump_jobs(interface: str) -> list[str]:
+    """Stop active scan jobs on the same interface before a channel-locked action."""
+    stopped: list[str] = []
+    for job_id, job in JOBS.items():
+        if job.get("type") != "airodump" or job.get("interface") != interface:
+            continue
+        process = job.get("process")
+        if not process or process.poll() is not None:
+            continue
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        log_handle = job.get("log_handle")
+        if log_handle and not log_handle.closed:
+            log_handle.close()
+        stopped.append(job_id)
+    return stopped
 
 
 def sanitize_name(value: str) -> str:

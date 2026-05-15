@@ -317,10 +317,12 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { api } from '../api/index.js'
 import { useInterfaces } from '../composables/useInterfaces.js'
 import { useLogs } from '../composables/useLogs.js'
+import { useScan } from '../composables/useScan.js'
 import { useTarget } from '../composables/useTarget.js'
 import { useToast } from '../composables/useToast.js'
 
 const { interfaces, selectedInterface } = useInterfaces()
+const { loadJobs: loadScanJobs } = useScan()
 const { bssid: targetBssid, essid: targetEssid, channel: targetChannel, pmf: targetPmf } = useTarget()
 const toast = useToast()
 const logs = useLogs()
@@ -394,6 +396,14 @@ async function execute() {
       count: form.count,
       channel: form.channel ? parseInt(form.channel) : null,
     })
+    if (started.stopped_scan_jobs?.length) {
+      await loadScanJobs()
+      logs.add('airodump-ng stop (auto)', {
+        stdout: `Stopped active scan job${started.stopped_scan_jobs.length > 1 ? 's' : ''} ${started.stopped_scan_jobs.join(', ')} before deauth channel lock.`,
+        success: true,
+      })
+      toast.info('Active network scan stopped so the interface could switch channels')
+    }
     deauthJobId.value = started.job_id
     output.value = { ...started, success: true, returncode: null, stdout: '', stderr: '' }
     await pollDeauthJob(run)

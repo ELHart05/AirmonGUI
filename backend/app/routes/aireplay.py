@@ -9,7 +9,14 @@ from fastapi import APIRouter, HTTPException
 from ..config import CAPTURE_DIR
 from ..models import DeauthRequest
 from ..state import JOBS
-from ..utils import clean_terminal_output, command_prefix, new_job_id, run_command, set_interface_channel
+from ..utils import (
+    clean_terminal_output,
+    command_prefix,
+    new_job_id,
+    run_command,
+    set_interface_channel,
+    stop_conflicting_airodump_jobs,
+)
 
 router = APIRouter(prefix="/aireplay", tags=["aireplay"])
 
@@ -43,10 +50,12 @@ def _stop_process(process: subprocess.Popen, timeout: int = 3) -> None:
         process.wait(timeout=timeout)
 
 
-def _build_deauth_command(request: DeauthRequest) -> tuple[list[str], str, dict | None]:
+def _build_deauth_command(request: DeauthRequest) -> tuple[list[str], str, dict | None, list[str]]:
     iface = request.interface.strip()
     if not iface or "/" in iface or ".." in iface:
         raise HTTPException(status_code=400, detail="Invalid interface name")
+
+    stopped_scan_jobs = stop_conflicting_airodump_jobs(iface)
 
     # Set interface channel before attacking so frames land on the right frequency
     channel_result = None
@@ -72,7 +81,7 @@ def _build_deauth_command(request: DeauthRequest) -> tuple[list[str], str, dict 
     if request.client:
         command += ["-c", request.client]
     command.append(iface)
-    return command, iface, channel_result
+    return command, iface, channel_result, stopped_scan_jobs
 
 
 def _detect_ap_channel(output: str) -> str:
@@ -90,12 +99,12 @@ def _retry_request_on_ap_channel(request: DeauthRequest, output: str) -> DeauthR
 @router.post("/deauth", summary="Send deauthentication frames",
              response_description="stdout/stderr from aireplay-ng")
 def deauth(request: DeauthRequest) -> dict:
-    command, _iface, channel_result = _build_deauth_command(request)
+    command, _iface, channel_result, stopped_scan_jobs = _build_deauth_command(request)
 
     result = run_command(command, timeout=120)
     retry_request = _retry_request_on_ap_channel(request, f"{result.get('stdout', '')}\n{result.get('stderr', '')}")
     if retry_request:
-        retry_command, _iface, retry_channel = _build_deauth_command(retry_request)
+        retry_command, _iface, retry_channel, retry_stopped_scan_jobs = _build_deauth_command(retry_request)
         retry_result = run_command(retry_command, timeout=120)
         retry_result["stdout"] = "\n".join(
             part for part in [
@@ -109,9 +118,11 @@ def deauth(request: DeauthRequest) -> dict:
         )
         retry_result["channel"] = retry_channel
         retry_result["retried_channel"] = retry_request.channel
+        retry_result["stopped_scan_jobs"] = list(dict.fromkeys(stopped_scan_jobs + retry_stopped_scan_jobs))
         return retry_result
     if channel_result:
         result["channel"] = channel_result
+    result["stopped_scan_jobs"] = stopped_scan_jobs
     return result
 
 
@@ -142,7 +153,7 @@ def list_deauth_jobs() -> dict:
 
 @router.post("/deauth/start", summary="Start cancellable deauth job")
 def start_deauth(request: DeauthRequest) -> dict:
-    command, iface, channel_result = _build_deauth_command(request)
+    command, iface, channel_result, stopped_scan_jobs = _build_deauth_command(request)
     job_id = new_job_id()
     log_path = os.path.join(CAPTURE_DIR, f"deauth_{job_id}.log")
     log_handle = open(log_path, "w", encoding="utf-8")  # noqa: WPS515
@@ -162,12 +173,14 @@ def start_deauth(request: DeauthRequest) -> dict:
         "log_handle": log_handle,
         "start_time": int(time.time()),
         "stopped": False,
+        "stopped_scan_jobs": stopped_scan_jobs,
     }
     return {
         "job_id": job_id,
         "running": True,
         "command": " ".join(command),
         "channel": channel_result,
+        "stopped_scan_jobs": stopped_scan_jobs,
     }
 
 
@@ -240,6 +253,7 @@ def deauth_status(job_id: str) -> dict:
         "stderr": "",
         "channel": job.get("channel_result"),
         "retried_channel": job.get("retried_channel"),
+        "stopped_scan_jobs": job.get("stopped_scan_jobs", []),
         "command": job.get("command"),
         "elapsed": int(time.time()) - job.get("start_time", int(time.time())),
     }
