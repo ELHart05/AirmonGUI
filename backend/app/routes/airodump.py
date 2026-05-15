@@ -38,6 +38,7 @@ def list_jobs() -> dict:
                 "start_time": job.get("start_time"),
             }
         )
+    jobs.sort(key=lambda item: item.get("start_time") or 0, reverse=True)
     return {"jobs": jobs}
 
 
@@ -45,6 +46,19 @@ def list_jobs() -> dict:
 def start_airodump(request: AirodumpStartRequest) -> dict:
     if not request.interface:
         raise HTTPException(status_code=400, detail="Interface is required")
+
+    for job in JOBS.values():
+        process = job.get("process")
+        if (
+            job.get("type") == "airodump"
+            and job.get("interface") == request.interface
+            and process
+            and process.poll() is None
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=f"An airodump-ng scan is already running on {request.interface}",
+            )
 
     prefix = request.output_prefix or f"capture_{int(time.time())}"
     prefix = sanitize_name(prefix)

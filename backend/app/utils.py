@@ -96,19 +96,18 @@ def _read_interface_channel(iface: str) -> str:
     return ""
 
 
-def set_interface_channel(iface: str, channel: str | int, attempts: int = 1) -> dict:
-    """Set a wireless interface channel without disrupting monitor mode."""
+def set_interface_channel(iface: str, channel: str | int, attempts: int = 3) -> dict:
+    """Set and verify a wireless interface channel before targeted capture/deauth."""
     target = str(channel).strip()
     if not target.isdigit() or not (1 <= int(target) <= 165):
         raise HTTPException(status_code=400, detail="Channel must be between 1 and 165")
 
     commands = [
-        command_prefix() + ["iwconfig", iface, "channel", target],
         command_prefix() + ["iw", "dev", iface, "set", "channel", target],
+        command_prefix() + ["iwconfig", iface, "channel", target],
     ]
     errors: list[str] = []
     current = ""
-    command_succeeded = False
 
     for _ in range(attempts):
         for command in commands:
@@ -120,9 +119,7 @@ def set_interface_channel(iface: str, channel: str | int, attempts: int = 1) -> 
                     timeout=8,
                     check=False,
                 )
-                if result.returncode == 0:
-                    command_succeeded = True
-                elif result.stderr.strip():
+                if result.returncode != 0 and result.stderr.strip():
                     errors.append(f"{' '.join(command)}: {result.stderr.strip()}")
             except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
                 errors.append(f"{' '.join(command)}: {exc}")
@@ -138,20 +135,10 @@ def set_interface_channel(iface: str, channel: str | int, attempts: int = 1) -> 
                 "stderr": "\n".join(dict.fromkeys(errors)),
             }
 
-    if command_succeeded:
-        warning = ""
-        if current and current != target:
-            warning = f"Requested channel {target}; readback currently reports channel {current}."
-        elif not current:
-            warning = "Requested channel set; readback unavailable."
-        return {
-            "success": True,
-            "requested": target,
-            "current": current,
-            "verified": False,
-            "method": "direct",
-            "stderr": "\n".join(dict.fromkeys([*errors, warning])),
-        }
+    if current and current != target:
+        errors.append(f"Requested channel {target}; readback currently reports channel {current}.")
+    elif not current:
+        errors.append("Requested channel set could not be verified by iw or iwconfig.")
 
     return {
         "success": False,

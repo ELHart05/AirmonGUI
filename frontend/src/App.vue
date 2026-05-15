@@ -65,10 +65,14 @@ import TerminalView from './views/TerminalView.vue'
 import { useNav } from './composables/useNav.js'
 import { useInterfaces } from './composables/useInterfaces.js'
 import { useScan } from './composables/useScan.js'
+import { useCrack } from './composables/useCrack.js'
+import { useHandshake } from './composables/useHandshake.js'
 
 const { currentView, sidebarOpen } = useNav()
 const { refresh: refreshInterfaces } = useInterfaces()
-const { loadJobs } = useScan()
+const { resume: resumeScan } = useScan()
+const { resume: resumeCrack } = useCrack()
+const { resume: resumeHandshake } = useHandshake()
 
 const views = {
   overview: OverviewView,
@@ -87,7 +91,11 @@ const currentComponent = computed(() => views[currentView.value] ?? OverviewView
 
 onMounted(async () => {
   await refreshInterfaces()
-  await loadJobs()
+  await Promise.all([
+    resumeScan(),
+    resumeCrack(),
+    resumeHandshake(),
+  ])
 })
 </script>
 

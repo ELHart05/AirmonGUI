@@ -362,6 +362,7 @@ function resetForm() {
 }
 
 async function execute() {
+  if (running.value) return
   if (!form.interface) {
     toast.warning('Select an interface')
     return
@@ -443,10 +444,46 @@ async function cancelDeauth() {
   running.value = false
 }
 
-onMounted(() => {
+async function resumeDeauth() {
+  try {
+    const data = await api.aireplay.deauthJobs()
+    const active = (data.jobs || []).find((job) => job.running)
+    if (!active) return
+    deauthJobId.value = active.job_id
+    form.interface = active.interface || form.interface
+    form.bssid = active.bssid || form.bssid
+    form.client = active.client || form.client
+    form.count = active.count ?? form.count
+    form.channel = active.channel || form.channel
+    running.value = true
+    output.value = active
+    const run = {
+      id: active.job_id,
+      time: new Date((active.start_time || Date.now() / 1000) * 1000).toLocaleTimeString(undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }),
+      interface: active.interface || '',
+      bssid: active.bssid || '',
+      client: active.client || '',
+      count: active.count ?? '',
+      channel: active.channel || '',
+      lockedChannel: '',
+      success: false,
+      returncode: '',
+    }
+    await pollDeauthJob(run)
+  } catch {
+    // non-critical resume path
+  }
+}
+
+onMounted(async () => {
   if (selectedInterface.value) form.interface = selectedInterface.value
   if (targetBssid.value) form.bssid = targetBssid.value
   if (targetChannel.value) form.channel = String(targetChannel.value)
+  await resumeDeauth()
 })
 
 onUnmounted(() => {

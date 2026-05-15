@@ -1,5 +1,6 @@
 import os
 import re
+import signal
 import subprocess
 import time
 
@@ -13,6 +14,33 @@ from ..utils import clean_terminal_output, command_prefix, new_job_id, run_comma
 router = APIRouter(prefix="/aireplay", tags=["aireplay"])
 
 _AP_CHANNEL_RE = re.compile(r"AP uses channel\s+(\d+)", re.IGNORECASE)
+
+
+def _start_process(command: list[str], log_handle) -> subprocess.Popen:
+    return subprocess.Popen(
+        command,
+        stdout=log_handle,
+        stderr=log_handle,
+        text=True,
+        preexec_fn=os.setsid,
+    )
+
+
+def _stop_process(process: subprocess.Popen, timeout: int = 3) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait(timeout=timeout)
 
 
 def _build_deauth_command(request: DeauthRequest) -> tuple[list[str], str, dict | None]:
@@ -87,13 +115,38 @@ def deauth(request: DeauthRequest) -> dict:
     return result
 
 
+@router.get("/deauth/jobs", summary="List deauth jobs")
+def list_deauth_jobs() -> dict:
+    jobs = []
+    for job_id, job in JOBS.items():
+        if job.get("type") != "deauth":
+            continue
+        process = job.get("process")
+        running = bool(process and process.poll() is None)
+        jobs.append({
+            "job_id": job_id,
+            "running": running,
+            "stopped": bool(job.get("stopped")),
+            "interface": job.get("interface"),
+            "bssid": job.get("bssid"),
+            "client": job.get("client"),
+            "count": job.get("count"),
+            "channel": job.get("channel"),
+            "channel_result": job.get("channel_result"),
+            "command": job.get("command"),
+            "start_time": job.get("start_time"),
+        })
+    jobs.sort(key=lambda item: item.get("start_time") or 0, reverse=True)
+    return {"jobs": jobs}
+
+
 @router.post("/deauth/start", summary="Start cancellable deauth job")
 def start_deauth(request: DeauthRequest) -> dict:
     command, iface, channel_result = _build_deauth_command(request)
     job_id = new_job_id()
     log_path = os.path.join(CAPTURE_DIR, f"deauth_{job_id}.log")
     log_handle = open(log_path, "w", encoding="utf-8")  # noqa: WPS515
-    process = subprocess.Popen(command, stdout=log_handle, stderr=log_handle, text=True)
+    process = _start_process(command, log_handle)
 
     JOBS[job_id] = {
         "type": "deauth",
@@ -139,7 +192,7 @@ def _restart_deauth_on_detected_channel(job: dict, log_tail: str) -> bool:
     log_handle = open(job["log_path"], "a", encoding="utf-8")  # noqa: WPS515
     log_handle.write(f"\nDetected AP channel {ap_channel}; retrying deauth on that channel.\n")
     log_handle.flush()
-    process = subprocess.Popen(command, stdout=log_handle, stderr=log_handle, text=True)
+    process = _start_process(command, log_handle)
     job.update({
         "process": process,
         "command": " ".join(command),
@@ -200,12 +253,8 @@ def stop_deauth(job_id: str) -> dict:
 
     process = job.get("process")
     job["stopped"] = True
-    if process and process.poll() is None:
-        process.terminate()
-        try:
-            process.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            process.kill()
+    if process:
+        _stop_process(process)
 
     log_handle = job.get("log_handle")
     if log_handle and not log_handle.closed:

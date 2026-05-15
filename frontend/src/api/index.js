@@ -48,6 +48,7 @@ export const api = {
   aireplay: {
     deauth: (params, options = {}) =>
       request('/aireplay/deauth', { method: 'POST', body: params, ...options }),
+    deauthJobs: () => request('/aireplay/deauth/jobs'),
     startDeauth: (params) => request('/aireplay/deauth/start', { method: 'POST', body: params }),
     deauthStatus: (jobId) => request(`/aireplay/deauth/${encodeURIComponent(jobId)}/status`),
     stopDeauth: (jobId) =>
@@ -55,6 +56,7 @@ export const api = {
   },
 
   aircrack: {
+    jobs: () => request('/aircrack/jobs'),
     crack: (params) => request('/aircrack/crack', { method: 'POST', body: params }),
     validate: (path) => request(`/aircrack/validate?path=${encodeURIComponent(path)}`),
     status: (jobId) => request(`/aircrack/${encodeURIComponent(jobId)}/status`),
@@ -69,6 +71,7 @@ export const api = {
   },
 
   handshake: {
+    jobs: () => request('/handshake/jobs'),
     start: (params) => request('/handshake/start', { method: 'POST', body: params }),
     status: (jobId) => request(`/handshake/${encodeURIComponent(jobId)}/status`),
     stop: (jobId) =>

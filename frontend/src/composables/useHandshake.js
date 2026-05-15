@@ -8,6 +8,7 @@ const captureJob = ref(null)   // { job_id, cap_path, bssid, channel, command }
 const captureStatus = ref(null) // latest poll result
 const capturing = ref(false)
 const handshakeDetected = ref(false)
+const handshakeJobs = ref([])
 
 export function useHandshake() {
   const toast = useToast()
@@ -22,11 +23,12 @@ export function useHandshake() {
       const data = await api.handshake.start(params)
       captureJob.value = data
       capturing.value = true
+      const displayChannel = data.channel || params.channel
       const channelStatus = data.channel_result?.current
         ? `\nLocked channel: ${data.channel_result.current}`
         : ''
       logs.add('airodump-ng (handshake capture)', {
-        stdout: `Started targeted capture on ${params.bssid} CH${params.channel}${channelStatus}\nCommand: ${data.command}`,
+        stdout: `Started targeted capture on ${params.bssid} CH${displayChannel}${channelStatus}\nCommand: ${data.command}`,
         success: true,
       })
       toast.success('Targeted capture started — watching for handshake')
@@ -51,6 +53,27 @@ export function useHandshake() {
     } catch {
       return null
     }
+  }
+
+  async function loadJobs() {
+    try {
+      const data = await api.handshake.jobs()
+      handshakeJobs.value = data.jobs || []
+      return handshakeJobs.value
+    } catch {
+      return []
+    }
+  }
+
+  async function resume() {
+    const jobs = await loadJobs()
+    const active = jobs.find((item) => item.running)
+    if (!active) return null
+
+    captureJob.value = active
+    capturing.value = true
+    await pollStatus()
+    return active
   }
 
   async function stopCapture() {
@@ -81,9 +104,12 @@ export function useHandshake() {
     captureStatus,
     capturing,
     handshakeDetected,
+    handshakeJobs,
     startCapture,
     pollStatus,
     stopCapture,
+    loadJobs,
+    resume,
     reset,
   }
 }

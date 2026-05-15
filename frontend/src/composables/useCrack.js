@@ -21,6 +21,7 @@ const validating = ref(false)
 
 let pollTimer = null
 const stopping = ref(false)
+const crackJobs = ref([])
 
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -73,6 +74,7 @@ export function useCrack() {
       logs.add('aircrack-ng', { stdout: `Started: ${data.command}`, success: true })
       toast.success('Aircrack-ng started — watching for results…')
       pollTimer = setInterval(pollStatus, 2000)
+      await loadJobs()
     } catch (err) {
       cracking.value = false
       toast.error(err.message)
@@ -101,6 +103,35 @@ export function useCrack() {
     } catch {
       // ignore transient poll errors
     }
+  }
+
+  async function loadJobs() {
+    try {
+      const data = await api.aircrack.jobs()
+      crackJobs.value = data.jobs || []
+      return crackJobs.value
+    } catch {
+      return []
+    }
+  }
+
+  async function resume() {
+    const jobs = await loadJobs()
+    const active = jobs.find((item) => item.running)
+    if (!active) return null
+
+    job.value = {
+      job_id: active.job_id,
+      command: active.command,
+    }
+    form.captureFile = active.capture_file || form.captureFile
+    form.wordlist = active.wordlist || form.wordlist
+    cracking.value = true
+    await pollStatus()
+    if (!pollTimer && cracking.value) {
+      pollTimer = setInterval(pollStatus, 2000)
+    }
+    return active
   }
 
   async function stopCrack() {
@@ -145,10 +176,13 @@ export function useCrack() {
     stopping,
     keyFound,
     captures,
+    crackJobs,
     captureDir,
     capValidation,
     validating,
     loadCaptures,
+    loadJobs,
+    resume,
     validateCap,
     startCrack,
     pollStatus,

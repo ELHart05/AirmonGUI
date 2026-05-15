@@ -1,5 +1,6 @@
 import os
 import re
+import signal
 import subprocess
 import time
 
@@ -16,6 +17,27 @@ router = APIRouter(prefix="/aircrack", tags=["aircrack"])
 _ANSI = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 
+def _start_process(command: list[str], log_handle) -> subprocess.Popen:
+    return subprocess.Popen(command, stdout=log_handle, stderr=log_handle, preexec_fn=os.setsid)
+
+
+def _stop_process(process: subprocess.Popen, timeout: int = 10) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait(timeout=timeout)
+
+
 def _read_log(log_path: str) -> str:
     """Read a log file produced by aircrack-ng, strip control chars, return last 50 lines."""
     try:
@@ -29,9 +51,36 @@ def _read_log(log_path: str) -> str:
     return "\n".join(segments[-50:])
 
 
+@router.get("/jobs")
+def list_crack_jobs() -> dict:
+    jobs = []
+    for job_id, job in JOBS.items():
+        if job.get("type") != "crack":
+            continue
+        process = job.get("process")
+        running = bool(process and process.poll() is None)
+        jobs.append({
+            "job_id": job_id,
+            "running": running,
+            "returncode": process.poll() if process else None,
+            "command": job.get("command"),
+            "log_path": job.get("log_path"),
+            "start_time": job.get("start_time"),
+            "capture_file": job.get("capture_file"),
+            "wordlist": job.get("wordlist"),
+        })
+    jobs.sort(key=lambda item: item.get("start_time") or 0, reverse=True)
+    return {"jobs": jobs}
+
+
 @router.post("/crack")
 def start_aircrack(request: AircrackRequest) -> dict:
     """Launch aircrack-ng as a background job and return job_id for polling."""
+    for job in JOBS.values():
+        process = job.get("process")
+        if job.get("type") == "crack" and process and process.poll() is None:
+            raise HTTPException(status_code=409, detail="An aircrack-ng job is already running")
+
     capture_path = request.capture_file
     if not os.path.isabs(capture_path):
         capture_path = safe_capture_path(capture_path)
@@ -55,7 +104,7 @@ def start_aircrack(request: AircrackRequest) -> dict:
     command.append(capture_path)
 
     log_handle = open(log_path, "wb")  # noqa: WPS515
-    process = subprocess.Popen(command, stdout=log_handle, stderr=log_handle)
+    process = _start_process(command, log_handle)
 
     JOBS[job_id] = {
         "type": "crack",
@@ -172,12 +221,8 @@ def stop_crack(job_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Job not found")
 
     process = job.get("process")
-    if process and process.poll() is None:
-        process.terminate()
-        try:
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            process.kill()
+    if process:
+        _stop_process(process)
 
     log_handle = job.get("log_handle")
     if log_handle and not log_handle.closed:

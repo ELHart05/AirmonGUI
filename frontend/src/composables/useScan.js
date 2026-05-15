@@ -92,14 +92,24 @@ export function useScan() {
       const data = await api.airodump.jobs()
       jobs.value = data.jobs || []
       const active = jobs.value.find((j) => j.running)
-      if (active && !activeJobId.value) {
+      if (active) {
         activeJobId.value = active.job_id
+        form.interface = active.interface || form.interface
         isRunning.value = true
+      } else if (activeJobId.value && !jobs.value.some((j) => j.job_id === activeJobId.value && j.running)) {
+        isRunning.value = false
       }
     } catch {
       // silent — not critical
     }
   }
 
-  return { form, activeJobId, results, isRunning, jobs, scanLoading, logTail, start, stop, fetchResults, loadJobs }
+  async function resume() {
+    await loadJobs()
+    if (activeJobId.value) {
+      await fetchResults()
+    }
+  }
+
+  return { form, activeJobId, results, isRunning, jobs, scanLoading, logTail, start, stop, fetchResults, loadJobs, resume }
 }
