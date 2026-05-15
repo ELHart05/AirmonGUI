@@ -57,7 +57,7 @@ const Footer = () => {
         {/* Bottom */}
         <div className="pt-8 border-t border-border flex flex-col md:flex-row justify-between items-center gap-4">
           <p className="font-mono text-xs text-muted-foreground">
-            © 2024 AirMonGUI. Released under GPL-3.0 License.
+            © {new Date().getFullYear()} AirMonGUI. Released under GPL-3.0 License.
           </p>
           <p className="font-mono text-xs text-muted-foreground">
             For educational and authorized testing only.
