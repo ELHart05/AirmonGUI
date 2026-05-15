@@ -16,6 +16,7 @@ const results = reactive({ networks: [], clients: [] })
 const isRunning = ref(false)
 const jobs = ref([])
 const scanLoading = ref(false)
+const logTail = ref('')
 
 export function useScan() {
   const toast = useToast()
@@ -38,6 +39,7 @@ export function useScan() {
       // Clear stale results before activating the new job
       results.networks = []
       results.clients = []
+      logTail.value = ''
       activeJobId.value = data.job_id
       isRunning.value = true
       logs.add('airodump-ng start', { stdout: `Command: ${data.command}`, success: true })
@@ -73,6 +75,7 @@ export function useScan() {
       const data = await api.airodump.results(activeJobId.value)
       results.networks = data.data?.networks || []
       results.clients = data.data?.clients || []
+      logTail.value = data.log_tail || ''
       isRunning.value = data.running
     } catch (err) {
       toast.error(err.message)
@@ -95,5 +98,5 @@ export function useScan() {
     }
   }
 
-  return { form, activeJobId, results, isRunning, jobs, scanLoading, start, stop, fetchResults, loadJobs }
+  return { form, activeJobId, results, isRunning, jobs, scanLoading, logTail, start, stop, fetchResults, loadJobs }
 }

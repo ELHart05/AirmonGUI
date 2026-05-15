@@ -7,7 +7,14 @@ from fastapi import APIRouter, HTTPException
 
 from ..models import HandshakeCaptureRequest
 from ..state import JOBS
-from ..utils import command_prefix, new_job_id, safe_capture_path, sanitize_name
+from ..utils import (
+    clean_terminal_output,
+    command_prefix,
+    new_job_id,
+    safe_capture_path,
+    sanitize_name,
+    set_interface_channel,
+)
 
 router = APIRouter(prefix="/handshake", tags=["handshake"])
 
@@ -23,6 +30,17 @@ def start_handshake_capture(request: HandshakeCaptureRequest) -> dict:
     cap_path = f"{output_prefix}-01.cap"
     csv_path = f"{output_prefix}-01.csv"
     log_path = f"{output_prefix}.log"
+
+    channel_result = set_interface_channel(request.interface, request.channel)
+    if not channel_result["success"]:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Could not lock {request.interface} to channel {channel_result['requested']} "
+                f"(current: {channel_result['current'] or 'unknown'}). "
+                f"{channel_result['stderr']}"
+            ).strip(),
+        )
 
     command = command_prefix() + [
         "airodump-ng",
@@ -50,6 +68,7 @@ def start_handshake_capture(request: HandshakeCaptureRequest) -> dict:
         "log_path": log_path,
         "start_time": int(time.time()),
         "log_handle": log_handle,
+        "channel_result": channel_result,
     }
 
     return {
@@ -57,6 +76,7 @@ def start_handshake_capture(request: HandshakeCaptureRequest) -> dict:
         "cap_path": cap_path,
         "bssid": request.bssid,
         "channel": request.channel,
+        "channel_result": channel_result,
         "command": " ".join(command),
     }
 
@@ -83,9 +103,9 @@ def handshake_status(job_id: str) -> dict:
     if log_path and os.path.exists(log_path):
         try:
             with open(log_path, "r", encoding="utf-8", errors="ignore") as fh:
-                lines = fh.readlines()
-            log_tail = "".join(lines[-25:])
-            handshake_in_log = any("WPA handshake" in ln for ln in lines)
+                raw_log = fh.read()
+            log_tail = clean_terminal_output(raw_log, max_lines=30)
+            handshake_in_log = "WPA handshake" in log_tail
         except OSError:
             pass
 
@@ -123,6 +143,7 @@ def handshake_status(job_id: str) -> dict:
         "cap_size": cap_size,
         "bssid": job.get("bssid"),
         "channel": job.get("channel"),
+        "channel_result": job.get("channel_result"),
         "elapsed": int(time.time()) - job.get("start_time", int(time.time())),
         "log_tail": log_tail,
     }

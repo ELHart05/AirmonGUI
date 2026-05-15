@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from ..models import AirodumpStartRequest, AirodumpStopRequest
 from ..state import JOBS
 from ..utils import (
+    clean_terminal_output,
     command_prefix,
     new_job_id,
     parse_airodump_csv,
@@ -126,10 +127,19 @@ def airodump_results(job_id: str) -> dict:
 
     process = job.get("process")
     data = parse_airodump_csv(csv_path)
+    log_tail = ""
+    log_path = job.get("log_path")
+    if log_path:
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="ignore") as fh:
+                log_tail = clean_terminal_output(fh.read(), max_lines=30)
+        except OSError:
+            pass
     return {
         "job_id": job_id,
         "csv_path": csv_path,
         "cap_path": job.get("cap_path"),
         "running": bool(process and process.poll() is None),
         "data": data,
+        "log_tail": log_tail,
     }

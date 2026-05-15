@@ -143,6 +143,19 @@
       </div>
     </div>
 
+    <!-- Live scan log -->
+    <div v-if="logTail" class="card">
+      <div class="card-header">
+        <h3 class="card-title">Live Capture Log</h3>
+        <span class="text-xs text-slate-500 font-mono truncate max-w-xs">
+          {{ jobs.find((job) => job.job_id === activeJobId)?.command }}
+        </span>
+      </div>
+      <div class="terminal max-h-52 overflow-y-auto whitespace-pre">
+        {{ logTail }}
+      </div>
+    </div>
+
     <!-- Networks table -->
     <div class="card">
       <div class="card-header">
@@ -307,7 +320,7 @@ import { useTarget } from '../composables/useTarget.js'
 import { useToast } from '../composables/useToast.js'
 
 const { interfaces } = useInterfaces()
-const { form, activeJobId, results, isRunning, jobs, scanLoading, start, stop, fetchResults, loadJobs } = useScan()
+const { form, activeJobId, results, isRunning, jobs, scanLoading, logTail, start, stop, fetchResults, loadJobs } = useScan()
 const { setTarget } = useTarget()
 const { navigate } = useNav()
 const { info } = useToast()

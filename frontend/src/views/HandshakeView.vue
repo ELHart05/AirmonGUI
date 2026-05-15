@@ -541,6 +541,7 @@ async function sendDeauth() {
       bssid: form.bssid,
       client: deauthForm.client || null,
       count: deauthForm.count,
+      channel: form.channel ? parseInt(form.channel) : null,
     })
     deauthResult.value = data
     lastDeauthTime.value = new Date().toLocaleTimeString()

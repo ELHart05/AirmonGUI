@@ -22,8 +22,11 @@ export function useHandshake() {
       const data = await api.handshake.start(params)
       captureJob.value = data
       capturing.value = true
+      const channelStatus = data.channel_result?.current
+        ? `\nLocked channel: ${data.channel_result.current}`
+        : ''
       logs.add('airodump-ng (handshake capture)', {
-        stdout: `Started targeted capture on ${params.bssid} CH${params.channel}\nCommand: ${data.command}`,
+        stdout: `Started targeted capture on ${params.bssid} CH${params.channel}${channelStatus}\nCommand: ${data.command}`,
         success: true,
       })
       toast.success('Targeted capture started — watching for handshake')

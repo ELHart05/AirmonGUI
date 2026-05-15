@@ -4,12 +4,14 @@
     <div class="px-5 py-4 border-b border-cyber-500/20">
       <div class="flex items-center gap-3">
         <div
-          class="w-10 h-10 rounded-lg bg-cyber-500 flex items-center justify-center text-slate-950 font-mono font-bold text-sm shrink-0 shadow-lg shadow-cyber-500/25"
+          class="p-2 rounded-lg bg-cyber-500/10 flex items-center justify-center text-cyber-300 shrink-0 transition-colors"
         >
-          AG
+          <Wifi class="w-5 h-5" />
         </div>
         <div class="flex-1 min-w-0">
-          <h1 class="text-sm font-mono font-bold text-cyber-100 tracking-wide text-glow">AirmonGUI</h1>
+          <h1 class="text-sm font-mono font-bold text-cyber-100 tracking-wide">
+            AirMon<span class="text-cyber-400 text-glow">GUI</span>
+          </h1>
           <p class="text-xs text-slate-400 mt-0.5">Local Aircrack-ng Console</p>
         </div>
         <!-- Mobile close button -->
@@ -104,6 +106,7 @@ import {
   ScrollText,
   ShieldCheck,
   Terminal,
+  Wifi,
   X,
   Zap,
 } from 'lucide-vue-next'

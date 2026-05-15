@@ -2,12 +2,16 @@ import csv
 import os
 import re
 import subprocess
+import time
 import uuid
 from typing import List
 
 from fastapi import HTTPException
 
 from .config import CAPTURE_DIR
+
+_ANSI_RE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+_CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 def command_prefix() -> List[str]:
@@ -43,6 +47,98 @@ def run_command(command: List[str], timeout: int = 60) -> dict:
             "stderr": f"Command timed out after {timeout}s",
             "returncode": -1,
         }
+
+
+def clean_terminal_output(value: str, max_lines: int = 80) -> str:
+    """Convert terminal-style output with ANSI cursor controls into readable lines."""
+    if not value:
+        return ""
+    text = value.replace("\r\n", "\n").replace("\r", "\n")
+    text = _ANSI_RE.sub("", text)
+    text = _CTRL_RE.sub("", text)
+    lines = []
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        if line.strip():
+            lines.append(line)
+    return "\n".join(lines[-max_lines:])
+
+
+def _read_interface_channel(iface: str) -> str:
+    """Best-effort channel readback using iw first, iwconfig second."""
+    try:
+        iw = subprocess.run(
+            command_prefix() + ["iw", "dev", iface, "info"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        match = re.search(r"\bchannel\s+(\d+)\b", iw.stdout + iw.stderr, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    try:
+        iwconfig = subprocess.run(
+            command_prefix() + ["iwconfig", iface],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        match = re.search(r"\bChannel[:=](\d+)\b", iwconfig.stdout + iwconfig.stderr, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return ""
+
+
+def set_interface_channel(iface: str, channel: str | int, attempts: int = 2) -> dict:
+    """Set and verify a wireless interface channel before targeted capture/deauth."""
+    target = str(channel).strip()
+    if not target.isdigit() or not (1 <= int(target) <= 165):
+        raise HTTPException(status_code=400, detail="Channel must be between 1 and 165")
+
+    commands = [
+        command_prefix() + ["iw", "dev", iface, "set", "channel", target],
+        command_prefix() + ["iwconfig", iface, "channel", target],
+    ]
+    errors: list[str] = []
+    current = ""
+
+    for _ in range(attempts):
+        for command in commands:
+            try:
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    timeout=8,
+                    check=False,
+                )
+                if result.returncode != 0 and result.stderr.strip():
+                    errors.append(result.stderr.strip())
+            except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+                errors.append(str(exc))
+        time.sleep(0.25)
+        current = _read_interface_channel(iface)
+        if current == target:
+            return {
+                "success": True,
+                "requested": target,
+                "current": current,
+                "stderr": "\n".join(dict.fromkeys(errors)),
+            }
+
+    return {
+        "success": False,
+        "requested": target,
+        "current": current,
+        "stderr": "\n".join(dict.fromkeys(errors)),
+    }
 
 
 def sanitize_name(value: str) -> str:

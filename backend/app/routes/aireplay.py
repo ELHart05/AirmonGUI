@@ -1,8 +1,7 @@
 from fastapi import APIRouter, HTTPException
-import subprocess
 
 from ..models import DeauthRequest
-from ..utils import command_prefix, run_command
+from ..utils import command_prefix, run_command, set_interface_channel
 
 router = APIRouter(prefix="/aireplay", tags=["aireplay"])
 
@@ -15,12 +14,18 @@ def deauth(request: DeauthRequest) -> dict:
         raise HTTPException(status_code=400, detail="Invalid interface name")
 
     # Set interface channel before attacking so frames land on the right frequency
+    channel_result = None
     if request.channel is not None:
-        subprocess.run(
-            command_prefix() + ["iwconfig", iface, "channel", str(request.channel)],
-            capture_output=True,
-            timeout=5,
-        )
+        channel_result = set_interface_channel(iface, request.channel)
+        if not channel_result["success"]:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Could not lock {iface} to channel {channel_result['requested']} "
+                    f"(current: {channel_result['current'] or 'unknown'}). "
+                    f"{channel_result['stderr']}"
+                ).strip(),
+            )
 
     command = command_prefix() + [
         "aireplay-ng",
@@ -33,4 +38,7 @@ def deauth(request: DeauthRequest) -> dict:
         command += ["-c", request.client]
     command.append(iface)
 
-    return run_command(command, timeout=120)
+    result = run_command(command, timeout=120)
+    if channel_result:
+        result["channel"] = channel_result
+    return result
