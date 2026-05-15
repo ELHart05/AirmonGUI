@@ -1,0 +1,129 @@
+import csv
+import os
+import re
+import subprocess
+import uuid
+from typing import List
+
+from fastapi import HTTPException
+
+from .config import CAPTURE_DIR
+
+
+def command_prefix() -> List[str]:
+    """Return sudo prefix when not running as root."""
+    if os.geteuid() == 0:
+        return []
+    return ["sudo"]
+
+
+def new_job_id() -> str:
+    return uuid.uuid4().hex
+
+
+def run_command(command: List[str], timeout: int = 60) -> dict:
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        return {
+            "success": completed.returncode == 0,
+            "stdout": completed.stdout.strip(),
+            "stderr": completed.stderr.strip(),
+            "returncode": completed.returncode,
+        }
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "success": False,
+            "stdout": exc.stdout or "",
+            "stderr": f"Command timed out after {timeout}s",
+            "returncode": -1,
+        }
+
+
+def sanitize_name(value: str) -> str:
+    """Strip unsafe characters from user-supplied file name components."""
+    return re.sub(r"[^a-zA-Z0-9._-]", "_", value.strip())
+
+
+def safe_capture_path(name: str) -> str:
+    """Resolve a capture name to an absolute path, preventing directory traversal."""
+    base = os.path.abspath(CAPTURE_DIR)
+    candidate = os.path.abspath(os.path.join(base, name))
+    if not candidate.startswith(base + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid capture path")
+    return candidate
+
+
+def parse_airmon_interfaces(output: str) -> List[dict]:
+    lines = [line for line in output.splitlines() if line.strip()]
+    if not lines:
+        return []
+
+    header_index = None
+    for i, line in enumerate(lines):
+        lower = line.strip().lower()
+        if lower.startswith("interface") or lower.startswith("phy"):
+            header_index = i
+            break
+
+    if header_index is None or header_index + 1 >= len(lines):
+        return []
+
+    header_line = lines[header_index].strip()
+    headers = re.split(r"\s{2,}|\t", header_line)
+    headers = [h.strip().lower() for h in headers]
+
+    parsed = []
+    for row in lines[header_index + 1 :]:
+        columns = re.split(r"\s{2,}|\t", row.strip())
+        if len(columns) < 2:
+            continue
+        entry = {headers[i]: columns[i] for i in range(min(len(headers), len(columns)))}
+        # Detect monitor mode heuristically
+        iface_name = entry.get("interface", "")
+        entry["monitor_mode"] = iface_name.endswith("mon")
+        parsed.append(entry)
+
+    return parsed
+
+
+def parse_airodump_csv(path: str) -> dict:
+    if not os.path.exists(path):
+        return {"networks": [], "clients": []}
+
+    networks: List[dict] = []
+    clients: List[dict] = []
+    section = "networks"
+    headers: List[str] = []
+
+    with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+        reader = csv.reader(handle)
+        for row in reader:
+            if not row:
+                section = "separator"
+                headers = []
+                continue
+            if row[0].strip().lower() == "station mac":
+                section = "clients"
+                headers = [col.strip() for col in row]
+                continue
+            if section == "separator":
+                headers = [col.strip() for col in row]
+                section = "networks"
+                continue
+            if not headers:
+                headers = [col.strip() for col in row]
+                continue
+
+            entry = {headers[i]: row[i].strip() for i in range(min(len(headers), len(row)))}
+            if section == "clients":
+                clients.append(entry)
+            else:
+                networks.append(entry)
+
+    return {"networks": networks, "clients": clients}
