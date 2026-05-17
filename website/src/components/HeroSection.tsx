@@ -4,7 +4,7 @@ import AnimatedTerminal from './AnimatedTerminal';
 
 const HeroSection = () => {
   return (
-    <section className="relative min-h-screen flex items-center justify-center pt-16 overflow-hidden scanlines">
+    <section className="relative min-h-screen flex items-center justify-center pb-16 pt-20 overflow-hidden scanlines">
       {/* Background effects */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-primary/5 via-transparent to-transparent" />
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
@@ -79,12 +79,6 @@ const HeroSection = () => {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Scroll indicator */}
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2">
-        <span className="font-mono text-xs text-muted-foreground">Scroll</span>
-        <div className="w-px h-8 bg-gradient-to-b from-primary to-transparent animate-pulse" />
       </div>
     </section>
   );
