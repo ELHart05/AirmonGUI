@@ -515,7 +515,8 @@ async function startCapture() {
     if (started?.channel) form.channel = String(started.channel)
     stage.value = 1
     deauthForm.interface = form.interface
-    // Start polling status every 2s
+    // Start polling status every 2s (clear first so the watch-created timer can't orphan)
+    clearInterval(pollTimer)
     pollTimer = setInterval(pollStatus, 2000)
   } finally {
     startingCapture.value = false

@@ -257,7 +257,7 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { api } from '../api/index.js'
 import { useCrack } from '../composables/useCrack.js'
 import { useToast } from '../composables/useToast.js'
@@ -283,6 +283,7 @@ const {
   stopCrack,
   resetResult,
   resetAll,
+  stopPolling,
 } = useCrack()
 
 const logEl = ref(null)
@@ -333,4 +334,8 @@ onMounted(async () => {
     form.captureFile = capFile.value
   }
 })
+
+// Stop the status poll when leaving the view (App.vue has no <keep-alive>, so the
+// component is destroyed). resumeCrack() re-establishes it on return.
+onUnmounted(() => stopPolling())
 </script>

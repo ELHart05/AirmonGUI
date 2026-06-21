@@ -1,6 +1,13 @@
 from fastapi import APIRouter, HTTPException
 
-from ..models import MonitorRequest
+from ..models import (
+    CommandResult,
+    ErrorResponse,
+    InterfacesResponse,
+    MonitorRequest,
+    MonitorResponse,
+    ToolCheckResponse,
+)
 from ..utils import command_prefix, parse_airmon_interfaces, run_command
 
 router = APIRouter(tags=["interfaces"])
@@ -23,9 +30,19 @@ def _enrich_with_macs(interfaces: list) -> list:
     return interfaces
 
 
-@router.get("/interfaces", summary="List wireless interfaces",
-            response_description="Parsed interface list with monitor-mode status and MAC addresses")
+@router.get(
+    "/interfaces",
+    summary="List wireless interfaces",
+    response_model=InterfacesResponse,
+    response_description="Parsed interface list with monitor-mode status and MAC addresses",
+    responses={500: {"model": ErrorResponse, "description": "`airmon-ng` could not be run"}},
+)
 def list_interfaces() -> dict:
+    """
+    Run `airmon-ng` and return every wireless interface with its driver, chipset,
+    monitor-mode flag, and MAC address, alongside the raw tool output. This is the
+    source of truth the UI uses to populate interface selectors.
+    """
     result = run_command(command_prefix() + ["airmon-ng"])
     if not result["success"] and not result["stdout"]:
         raise HTTPException(
@@ -38,9 +55,19 @@ def list_interfaces() -> dict:
     }
 
 
-@router.post("/monitor", summary="Start or stop monitor mode",
-             response_description="Command output and refreshed interface list")
+@router.post(
+    "/monitor",
+    summary="Start or stop monitor mode",
+    response_model=MonitorResponse,
+    response_description="Command output and the refreshed interface list",
+    responses={400: {"model": ErrorResponse, "description": "Invalid action or interface name"}},
+)
 def monitor_action(request: MonitorRequest) -> dict:
+    """
+    Run `airmon-ng start|stop <interface>` to toggle monitor mode on one interface,
+    then return the command output together with a freshly parsed interface list so
+    the UI can update immediately.
+    """
     if request.action not in {"start", "stop"}:
         raise HTTPException(status_code=400, detail="Action must be 'start' or 'stop'")
     iface = request.interface.strip()
@@ -56,7 +83,8 @@ def monitor_action(request: MonitorRequest) -> dict:
 @router.post(
     "/checkkill",
     summary="Kill global monitor-mode interfering processes",
-    response_description="Output from airmon-ng check kill",
+    response_model=CommandResult,
+    response_description="Output from `airmon-ng check kill`",
 )
 def check_kill() -> dict:
     """
@@ -66,8 +94,12 @@ def check_kill() -> dict:
     return run_command(command_prefix() + ["airmon-ng", "check", "kill"], timeout=60)
 
 
-@router.get("/toolcheck", summary="Check aircrack-ng suite availability",
-            response_description="Installation status and path for each required tool")
+@router.get(
+    "/toolcheck",
+    summary="Check aircrack-ng suite availability",
+    response_model=ToolCheckResponse,
+    response_description="Installation status and path for each required tool",
+)
 def tool_check() -> dict:
     """Check which aircrack-ng suite tools are installed."""
     tools = ["airmon-ng", "airodump-ng", "aireplay-ng", "aircrack-ng"]

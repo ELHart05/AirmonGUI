@@ -1,13 +1,22 @@
 import subprocess
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Path
 
-from ..models import AirodumpStartRequest, AirodumpStopRequest
+from ..models import (
+    AirodumpJobsResponse,
+    AirodumpResultsResponse,
+    AirodumpStartRequest,
+    AirodumpStartResponse,
+    AirodumpStopRequest,
+    ErrorResponse,
+    JobActionResponse,
+)
 from ..state import JOBS
 from ..utils import (
     clean_terminal_output,
     command_prefix,
+    latest_airodump_path,
     new_job_id,
     parse_airodump_csv,
     safe_capture_path,
@@ -18,8 +27,14 @@ from ..utils import (
 router = APIRouter(prefix="/airodump", tags=["airodump"])
 
 
-@router.get("/jobs")
+@router.get(
+    "/jobs",
+    summary="List scan jobs",
+    response_model=AirodumpJobsResponse,
+    response_description="All known airodump-ng jobs, newest first",
+)
 def list_jobs() -> dict:
+    """List every airodump-ng scan job this backend started, with live running state and output paths."""
     jobs = []
     for job_id, job in JOBS.items():
         process = job.get("process")
@@ -42,8 +57,25 @@ def list_jobs() -> dict:
     return {"jobs": jobs}
 
 
-@router.post("/start")
+@router.post(
+    "/start",
+    summary="Start a scan job",
+    response_model=AirodumpStartResponse,
+    response_description="The created job id and the airodump-ng command that was launched",
+    responses={
+        400: {"model": ErrorResponse, "description": "Interface is required"},
+        409: {
+            "model": ErrorResponse,
+            "description": "A scan is already running on this interface, or the channel could not be locked",
+        },
+    },
+)
 def start_airodump(request: AirodumpStartRequest) -> dict:
+    """
+    Launch a background `airodump-ng` capture. If a single channel is requested the
+    interface is locked to it first; output is written to `.cap`/`.csv`/`.log` files
+    in the capture directory. Poll `GET /api/airodump/results/{job_id}` for parsed data.
+    """
     if not request.interface:
         raise HTTPException(status_code=400, detail="Interface is required")
 
@@ -96,7 +128,11 @@ def start_airodump(request: AirodumpStartRequest) -> dict:
         command += ["--bssid", request.bssid]
 
     log_handle = open(log_path, "w", encoding="utf-8")  # noqa: WPS515
-    process = subprocess.Popen(command, stdout=log_handle, stderr=log_handle, text=True)
+    try:
+        process = subprocess.Popen(command, stdout=log_handle, stderr=log_handle, text=True)
+    except Exception:
+        log_handle.close()
+        raise
 
     job_id = new_job_id()
     JOBS[job_id] = {
@@ -124,8 +160,14 @@ def start_airodump(request: AirodumpStartRequest) -> dict:
     }
 
 
-@router.post("/stop")
+@router.post(
+    "/stop",
+    summary="Stop a scan job",
+    response_model=JobActionResponse,
+    responses={404: {"model": ErrorResponse, "description": "Job not found"}},
+)
 def stop_airodump(request: AirodumpStopRequest) -> dict:
+    """Terminate the airodump-ng process for the given job id and close its log file."""
     job = JOBS.get(request.job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -145,11 +187,31 @@ def stop_airodump(request: AirodumpStopRequest) -> dict:
     return {"success": True, "job_id": request.job_id}
 
 
-@router.get("/results/{job_id}")
-def airodump_results(job_id: str) -> dict:
+@router.get(
+    "/results/{job_id}",
+    summary="Get parsed scan results",
+    response_model=AirodumpResultsResponse,
+    response_description="Parsed networks and clients plus a cleaned tail of the live log",
+    responses={
+        400: {"model": ErrorResponse, "description": "Job has no CSV output"},
+        404: {"model": ErrorResponse, "description": "Job not found"},
+    },
+)
+def airodump_results(
+    job_id: str = Path(..., description="Scan job id returned by POST /api/airodump/start"),
+) -> dict:
+    """Parse the job's CSV file into networks and clients and return it with the live running state."""
     job = JOBS.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    # Resolve the newest output file rather than trusting a hardcoded -01 path:
+    # airodump-ng advances the suffix (-02, -03, ...) when a prefix is reused.
+    output_prefix = job.get("output_prefix", "")
+    start_time = job.get("start_time", 0)
+    if output_prefix:
+        job["csv_path"] = latest_airodump_path(output_prefix, "csv", start_time)
+        job["cap_path"] = latest_airodump_path(output_prefix, "cap", start_time)
 
     csv_path = job.get("csv_path")
     if not csv_path:

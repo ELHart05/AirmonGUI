@@ -497,7 +497,9 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  clearTimeout(deauthPollTimer)
+  // Stop the backend deauth job and the recursive poll loop on navigation away.
+  if (deauthJobId.value) cancelDeauth()
+  else clearTimeout(deauthPollTimer)
 })
 
 function formatLogTime(iso) {

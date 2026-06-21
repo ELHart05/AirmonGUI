@@ -4,11 +4,18 @@ import signal
 import subprocess
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Path
 
 from ..config import CAPTURE_DIR
-from ..models import DeauthRequest
-from ..state import JOBS
+from ..models import (
+    DeauthJobsResponse,
+    DeauthRequest,
+    DeauthResponse,
+    DeauthStartResponse,
+    DeauthStatusResponse,
+    ErrorResponse,
+)
+from ..state import JOBS, JOBS_LOCK
 from ..utils import (
     clean_terminal_output,
     command_prefix,
@@ -96,9 +103,22 @@ def _retry_request_on_ap_channel(request: DeauthRequest, output: str) -> DeauthR
     return request.model_copy(update={"channel": int(ap_channel)})
 
 
-@router.post("/deauth", summary="Send deauthentication frames",
-             response_description="stdout/stderr from aireplay-ng")
+@router.post(
+    "/deauth",
+    summary="Send deauth frames (blocking)",
+    response_model=DeauthResponse,
+    response_description="stdout/stderr from aireplay-ng plus channel-lock details",
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid interface name"},
+        409: {"model": ErrorResponse, "description": "The channel could not be locked"},
+    },
+)
 def deauth(request: DeauthRequest) -> dict:
+    """
+    Run a single blocking `aireplay-ng --deauth`. The interface is tuned to the target
+    channel first; if the AP's real channel is detected in the output, the deauth is
+    retried on that channel automatically. Use `/deauth/start` for a cancellable job.
+    """
     command, _iface, channel_result, stopped_scan_jobs = _build_deauth_command(request)
 
     result = run_command(command, timeout=120)
@@ -126,7 +146,12 @@ def deauth(request: DeauthRequest) -> dict:
     return result
 
 
-@router.get("/deauth/jobs", summary="List deauth jobs")
+@router.get(
+    "/deauth/jobs",
+    summary="List deauth jobs",
+    response_model=DeauthJobsResponse,
+    response_description="All known deauth jobs, newest first",
+)
 def list_deauth_jobs() -> dict:
     jobs = []
     for job_id, job in JOBS.items():
@@ -151,13 +176,30 @@ def list_deauth_jobs() -> dict:
     return {"jobs": jobs}
 
 
-@router.post("/deauth/start", summary="Start cancellable deauth job")
+@router.post(
+    "/deauth/start",
+    summary="Start a cancellable deauth job",
+    response_model=DeauthStartResponse,
+    response_description="The job id; poll and cancel it with the deauth job endpoints",
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid interface name"},
+        409: {"model": ErrorResponse, "description": "The channel could not be locked"},
+    },
+)
 def start_deauth(request: DeauthRequest) -> dict:
+    """
+    Start `aireplay-ng --deauth` as a background job in its own process group so it can
+    be cancelled later. Returns immediately with a job id to poll.
+    """
     command, iface, channel_result, stopped_scan_jobs = _build_deauth_command(request)
     job_id = new_job_id()
     log_path = os.path.join(CAPTURE_DIR, f"deauth_{job_id}.log")
     log_handle = open(log_path, "w", encoding="utf-8")  # noqa: WPS515
-    process = _start_process(command, log_handle)
+    try:
+        process = _start_process(command, log_handle)
+    except Exception:
+        log_handle.close()
+        raise
 
     JOBS[job_id] = {
         "type": "deauth",
@@ -198,7 +240,11 @@ def _restart_deauth_on_detected_channel(job: dict, log_tail: str) -> bool:
         count=job["count"],
         channel=int(ap_channel),
     )
-    command, _iface, channel_result = _build_deauth_command(request)
+    try:
+        command, _iface, channel_result, _stopped = _build_deauth_command(request)
+    except HTTPException:
+        # Channel re-lock failed; leave the finished job as-is rather than erroring the status poll.
+        return False
     log_handle = job.get("log_handle")
     if log_handle and not log_handle.closed:
         log_handle.close()
@@ -218,8 +264,16 @@ def _restart_deauth_on_detected_channel(job: dict, log_tail: str) -> bool:
     return True
 
 
-@router.get("/deauth/{job_id}/status", summary="Poll deauth job")
-def deauth_status(job_id: str) -> dict:
+@router.get(
+    "/deauth/{job_id}/status",
+    summary="Poll a deauth job",
+    response_model=DeauthStatusResponse,
+    response_description="Live state, elapsed time, and a tail of the aireplay-ng log",
+    responses={404: {"model": ErrorResponse, "description": "Job not found"}},
+)
+def deauth_status(
+    job_id: str = Path(..., description="Deauth job id from POST /api/aireplay/deauth/start"),
+) -> dict:
     job = JOBS.get(job_id)
     if not job or job.get("type") != "deauth":
         raise HTTPException(status_code=404, detail="Job not found")
@@ -240,7 +294,15 @@ def deauth_status(job_id: str) -> dict:
     except OSError:
         pass
 
-    if not running and not job.get("stopped") and _restart_deauth_on_detected_channel(job, log_tail):
+    # Serialize the check-then-spawn so two concurrent polls cannot both pass the
+    # retried_channel guard and each launch a separate (orphaned) aireplay-ng.
+    with JOBS_LOCK:
+        should_restart = (
+            not running
+            and not job.get("stopped")
+            and _restart_deauth_on_detected_channel(job, log_tail)
+        )
+    if should_restart:
         return deauth_status(job_id)
 
     return {
@@ -259,14 +321,23 @@ def deauth_status(job_id: str) -> dict:
     }
 
 
-@router.post("/deauth/{job_id}/stop", summary="Cancel deauth job")
-def stop_deauth(job_id: str) -> dict:
+@router.post(
+    "/deauth/{job_id}/stop",
+    summary="Cancel a deauth job",
+    response_model=DeauthStatusResponse,
+    response_description="Final job status after cancellation",
+    responses={404: {"model": ErrorResponse, "description": "Job not found"}},
+)
+def stop_deauth(
+    job_id: str = Path(..., description="Deauth job id to cancel"),
+) -> dict:
     job = JOBS.get(job_id)
     if not job or job.get("type") != "deauth":
         raise HTTPException(status_code=404, detail="Job not found")
 
+    with JOBS_LOCK:
+        job["stopped"] = True
     process = job.get("process")
-    job["stopped"] = True
     if process:
         _stop_process(process)
 

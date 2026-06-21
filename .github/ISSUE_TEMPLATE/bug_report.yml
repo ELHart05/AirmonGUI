@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a defect in AirmonGUI
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug! Please provide as much detail as you can.
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I'm using AirmonGUI on networks I own or am authorized to test.
+          required: true
+        - label: I searched existing issues and this hasn't been reported yet.
+          required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, plus what you expected to happen.
+      placeholder: When I start a scan, the networks table stays empty even though airodump-ng is running…
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to '...'
+        2. Click '...'
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / console output
+      description: Backend (uvicorn) output and/or browser console errors. This is automatically formatted as code.
+      render: shell
+  - type: input
+    id: adapter
+    attributes:
+      label: Wireless adapter / chipset
+      placeholder: TP-Link TL-WN722N (Atheros AR9271)
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      value: |
+        - OS / distro:
+        - Kernel:
+        - aircrack-ng version:
+        - Python version:
+        - Node version:
+        - Browser:
+    validations:
+      required: true

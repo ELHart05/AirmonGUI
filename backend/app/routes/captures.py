@@ -1,20 +1,29 @@
 import os
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Path
 
 from ..config import CAPTURE_DIR
+from ..models import CapturesResponse, DeleteCaptureResponse, ErrorResponse
 
 router = APIRouter(prefix="/captures", tags=["captures"])
 
 
-@router.get("", summary="List capture files",
-            response_description="Files in the capture directory (.cap .pcap .csv .ivs .log)")
+@router.get(
+    "",
+    summary="List capture files",
+    response_model=CapturesResponse,
+    response_description="Files in the capture directory (.cap .pcap .csv .ivs .log)",
+)
 def list_captures() -> dict:
+    """List every capture-related file in the capture directory with size and modified time."""
     items = []
     for name in sorted(os.listdir(CAPTURE_DIR)):
         if name.endswith((".cap", ".csv", ".pcap", ".ivs", ".log")):
             full = os.path.join(CAPTURE_DIR, name)
-            stat = os.stat(full)
+            try:
+                stat = os.stat(full)
+            except OSError:
+                continue  # file vanished between listdir and stat
             items.append(
                 {
                     "name": name,
@@ -26,15 +35,22 @@ def list_captures() -> dict:
     return {"captures": items, "capture_dir": CAPTURE_DIR}
 
 
-@router.get("/cap", summary="List crackable capture files",
-            response_description=".cap / .pcap / .ivs files suitable for aircrack-ng")
+@router.get(
+    "/cap",
+    summary="List crackable capture files",
+    response_model=CapturesResponse,
+    response_description=".cap / .pcap / .ivs files suitable for aircrack-ng",
+)
 def list_cap_files() -> dict:
     """List only .cap / .pcap / .ivs files suitable for aircrack-ng."""
     items = []
     for name in sorted(os.listdir(CAPTURE_DIR)):
         if name.endswith((".cap", ".pcap", ".ivs")):
             full = os.path.join(CAPTURE_DIR, name)
-            stat = os.stat(full)
+            try:
+                stat = os.stat(full)
+            except OSError:
+                continue  # file vanished between listdir and stat
             items.append(
                 {
                     "name": name,
@@ -46,9 +62,24 @@ def list_cap_files() -> dict:
     return {"captures": items, "capture_dir": CAPTURE_DIR}
 
 
-@router.delete("/{filename}", summary="Delete a capture file",
-               response_description="Confirmation with the deleted filename")
-def delete_capture(filename: str) -> dict:
+@router.delete(
+    "/{filename}",
+    summary="Delete a capture file",
+    response_model=DeleteCaptureResponse,
+    response_description="Confirmation with the deleted filename",
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid filename, path traversal, or disallowed type"},
+        404: {"model": ErrorResponse, "description": "File not found"},
+    },
+)
+def delete_capture(
+    filename: str = Path(
+        ...,
+        description="Name of the file to delete. Must be a bare file name with no path components.",
+        examples=["handshake-OfficeNet-01.cap"],
+    ),
+) -> dict:
+    """Delete one file from the capture directory after validating the name and extension."""
     # Reject anything that looks like a path component
     if "/" in filename or "\\" in filename or filename.startswith("."):
         raise HTTPException(status_code=400, detail="Invalid filename")

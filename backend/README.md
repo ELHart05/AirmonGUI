@@ -7,7 +7,7 @@ FastAPI backend for AirmonGUI. It exposes a local REST and WebSocket API that wr
 
 - List wireless interfaces and detect monitor-mode state.
 - Start or stop monitor mode on a selected interface.
-- Release interfering services only for the selected interface.
+- Stop processes that interfere with monitor mode (global `airmon-ng check kill`).
 - Run `airodump-ng`, handshake capture, deauth, and cracking jobs.
 - Manage capture files in the configured capture directory.
 - Serve Swagger UI at `/docs`, ReDoc at `/redoc`, and OpenAPI JSON at `/openapi.json`.
@@ -36,14 +36,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Optional environment file:
-
-```bash
-cp .env.example .env
-```
-
-The app reads environment variables from the process environment. If you use `.env`,
-export the variables before starting the server or load them from your shell tooling.
+The app reads settings from the process environment, not from a `.env` file. The defaults
+work out of the box; to change them, export the variables before starting the server. See
+`.env.example` for the full list of variable names and defaults.
 
 ## Configuration
 
@@ -79,7 +74,7 @@ All REST endpoints are under `/api`.
 | `GET /api/toolcheck` | Check required aircrack-ng tools |
 | `GET /api/interfaces` | List wireless interfaces |
 | `POST /api/monitor` | Start or stop monitor mode |
-| `POST /api/checkkill` | Release services for one selected interface |
+| `POST /api/checkkill` | Run global `airmon-ng check kill` to stop interfering processes |
 | `GET /api/airodump/jobs` | List capture jobs |
 | `POST /api/airodump/start` | Start a scan job |
 | `POST /api/airodump/stop` | Stop a scan job |
@@ -132,5 +127,5 @@ For API schema checks, run the backend and open `/docs` or fetch `/openapi.json`
 
 Keep the API local-only unless you have a very explicit reason to do otherwise. Wireless
 commands require elevated privileges and can disrupt connectivity. The check-kill endpoint
-is intentionally targeted to the selected interface and should not be changed back to a
-global process kill path.
+runs a global `airmon-ng check kill`, which stops NetworkManager and similar services
+across the system, so use it only when those services are blocking monitor mode.

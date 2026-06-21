@@ -73,6 +73,7 @@ export function useCrack() {
       job.value = data
       logs.add('aircrack-ng', { stdout: `Started: ${data.command}`, success: true })
       toast.success('Aircrack-ng started — watching for results…')
+      clearInterval(pollTimer)
       pollTimer = setInterval(pollStatus, 2000)
       await loadJobs()
     } catch (err) {
@@ -168,6 +169,13 @@ export function useCrack() {
     form.channel = ''
   }
 
+  // Stop polling without touching the backend job or clearing results — for
+  // component unmount, so the interval does not keep firing on a destroyed view.
+  function stopPolling() {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+
   return {
     form,
     job,
@@ -189,5 +197,6 @@ export function useCrack() {
     stopCrack,
     resetResult,
     resetAll,
+    stopPolling,
   }
 }

@@ -26,12 +26,22 @@ const Footer = () => {
             <h4 className="font-mono text-sm text-foreground mb-4">Resources</h4>
             <ul className="space-y-2">
               <li>
-                <a href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                <a
+                  href="https://github.com/ELHart05/AirmonGUI/blob/master/CONTRIBUTING.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
                   Contributing
                 </a>
               </li>
               <li>
-                <a href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                <a
+                  href="https://github.com/ELHart05/AirmonGUI/blob/master/LICENSE"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
                   License
                 </a>
               </li>
@@ -57,7 +67,7 @@ const Footer = () => {
         {/* Bottom */}
         <div className="pt-8 border-t border-border flex flex-col md:flex-row justify-between items-center gap-4">
           <p className="font-mono text-xs text-muted-foreground">
-            © {new Date().getFullYear()} AirMonGUI. Released under GPL-3.0 License.
+            © {new Date().getFullYear()} AirMonGUI. Released under the MIT License.
           </p>
           <p className="font-mono text-xs text-muted-foreground">
             For educational and authorized testing only.

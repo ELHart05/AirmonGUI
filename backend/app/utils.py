@@ -1,4 +1,5 @@
 import csv
+import glob
 import os
 import re
 import subprocess
@@ -184,6 +185,21 @@ def safe_capture_path(name: str) -> str:
     if not candidate.startswith(base + os.sep):
         raise HTTPException(status_code=400, detail="Invalid capture path")
     return candidate
+
+
+def latest_airodump_path(output_prefix: str, extension: str, start_time: int) -> str:
+    """Return the newest <prefix>-NN.<ext> written for a job, falling back to -01.
+
+    airodump-ng never overwrites an existing capture: a reused prefix advances the
+    numeric suffix (-02, -03, ...). Resolving the newest file at read time avoids
+    returning stale or empty data from a hardcoded -01 path.
+    """
+    pattern = re.compile(rf"^{re.escape(output_prefix)}-\d+\.{re.escape(extension)}$")
+    paths = [p for p in glob.glob(f"{output_prefix}-*.{extension}") if pattern.match(p)]
+    recent = [p for p in paths if os.path.getmtime(p) >= start_time - 1]
+    if not recent:
+        return f"{output_prefix}-01.{extension}"
+    return max(recent, key=os.path.getmtime)
 
 
 def parse_airmon_interfaces(output: str) -> List[dict]:

@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest an idea or improvement for AirmonGUI
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the pain point or use case. "I'm always frustrated when…"
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Describe the solution you'd like
+      description: What should AirmonGUI do? Mock-ups or example flows welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds or other approaches you've thought about.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Area
+      options:
+        - label: Backend / API
+        - label: Frontend / UI
+        - label: New tool or attack workflow
+        - label: Documentation

@@ -4,9 +4,16 @@ import re
 import subprocess
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Path
 
-from ..models import HandshakeCaptureRequest
+from ..models import (
+    ErrorResponse,
+    HandshakeCaptureRequest,
+    HandshakeJobsResponse,
+    HandshakeStartResponse,
+    HandshakeStatusResponse,
+    HandshakeStopResponse,
+)
 from ..state import JOBS
 from ..utils import (
     clean_terminal_output,
@@ -94,7 +101,12 @@ def _handshake_job_summary(job_id: str, job: dict) -> dict:
     }
 
 
-@router.get("/jobs")
+@router.get(
+    "/jobs",
+    summary="List handshake capture jobs",
+    response_model=HandshakeJobsResponse,
+    response_description="All known handshake capture jobs, newest first",
+)
 def list_handshake_jobs() -> dict:
     jobs = [
         _handshake_job_summary(job_id, job)
@@ -105,11 +117,24 @@ def list_handshake_jobs() -> dict:
     return {"jobs": jobs}
 
 
-@router.post("/start")
+@router.post(
+    "/start",
+    summary="Start a targeted handshake capture",
+    response_model=HandshakeStartResponse,
+    response_description="The job id, output paths, and the airodump-ng command",
+    responses={
+        409: {
+            "model": ErrorResponse,
+            "description": "A capture is already running on this interface, or the channel could not be locked",
+        }
+    },
+)
 def start_handshake_capture(request: HandshakeCaptureRequest) -> dict:
     """
-    Start a targeted airodump-ng session aimed at a specific BSSID + channel
-    to capture a WPA 4-way handshake.
+    Start a targeted `airodump-ng` session locked to a specific BSSID and channel to
+    capture a WPA 4-way handshake. The backend re-resolves the AP channel with a brief
+    scan and locks the interface to it before capturing. Poll the status endpoint to
+    detect the handshake.
     """
     prefix = request.output_prefix or f"hs_{sanitize_name(request.bssid.replace(':', ''))}"
     output_prefix = safe_capture_path(prefix)
@@ -156,7 +181,11 @@ def start_handshake_capture(request: HandshakeCaptureRequest) -> dict:
     ]
 
     log_handle = open(log_path, "w", encoding="utf-8")  # noqa: WPS515
-    process = subprocess.Popen(command, stdout=log_handle, stderr=log_handle, text=True)
+    try:
+        process = subprocess.Popen(command, stdout=log_handle, stderr=log_handle, text=True)
+    except Exception:
+        log_handle.close()
+        raise
 
     job_id = new_job_id()
     JOBS[job_id] = {
@@ -193,12 +222,19 @@ def start_handshake_capture(request: HandshakeCaptureRequest) -> dict:
     }
 
 
-@router.get("/{job_id}/status")
-def handshake_status(job_id: str) -> dict:
+@router.get(
+    "/{job_id}/status",
+    summary="Poll a handshake capture",
+    response_model=HandshakeStatusResponse,
+    response_description="Capture state, cap file size, elapsed time, and handshake detection",
+    responses={404: {"model": ErrorResponse, "description": "Job not found"}},
+)
+def handshake_status(
+    job_id: str = Path(..., description="Handshake job id from POST /api/handshake/start"),
+) -> dict:
     """
-    Poll the status of a handshake capture job.
-    Returns handshake_detected=True when the WPA 4-way handshake is captured,
-    detected either from the airodump log or by running aircrack-ng on the cap file.
+    Poll a handshake capture. `handshake_detected` becomes true when a WPA 4-way handshake
+    is found, either from the airodump-ng log or by running aircrack-ng on the cap file.
     """
     job = JOBS.get(job_id)
     if not job:
@@ -271,8 +307,17 @@ def handshake_status(job_id: str) -> dict:
     }
 
 
-@router.post("/{job_id}/stop")
-def stop_handshake_capture(job_id: str) -> dict:
+@router.post(
+    "/{job_id}/stop",
+    summary="Stop a handshake capture",
+    response_model=HandshakeStopResponse,
+    response_description="Confirmation with the final cap file path",
+    responses={404: {"model": ErrorResponse, "description": "Job not found"}},
+)
+def stop_handshake_capture(
+    job_id: str = Path(..., description="Handshake job id to stop"),
+) -> dict:
+    """Terminate the capture process and return the final cap file path and target BSSID."""
     job = JOBS.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")

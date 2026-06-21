@@ -160,6 +160,13 @@ function parseDbm(obj) {
   return isNaN(n) ? -100 : n
 }
 
+function formatSize(bytes) {
+  if (!bytes) return '0 B'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`
+}
+
 // ── enriched data ─────────────────────────────────────────────────────────────
 
 const networks = computed(() => {
@@ -200,7 +207,12 @@ async function refresh() {
   now.value = new Date()
   try {
     const data = await api.captures.list()
-    captureFiles.value = data.captures || []
+    // Backend returns { name, path, size, modified }; map to the fields this view renders.
+    captureFiles.value = (data.captures || []).map((f) => ({
+      ...f,
+      filename: f.name,
+      size_human: formatSize(f.size),
+    }))
   } catch {
     captureFiles.value = []
   } finally {
