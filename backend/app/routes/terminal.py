@@ -8,6 +8,7 @@ sent as a JSON text frame: {"type":"resize","cols":<n>,"rows":<n>}.
 
 import asyncio
 import fcntl
+import hmac
 import json
 import os
 import pty
@@ -17,21 +18,75 @@ import termios
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from ..config import (
+    ALLOW_TERMINAL_AS_ROOT,
+    ALLOWED_WS_ORIGINS,
+    AUTH_TOKEN,
+    TERMINAL_ENABLED,
+)
+
 router = APIRouter(tags=["terminal"])
 
 _SHELL = os.environ.get("SHELL", "/bin/bash")
 _SHELL_ARGS = [_SHELL]
 
+# Subprotocol the UI speaks; the token rides alongside it as a second value,
+# since the browser WebSocket API cannot set custom headers.
+_WS_SUBPROTOCOL = "airmon-terminal"
+
+
+def terminal_gate(origin: str | None, token: str | None) -> str | None:
+    """Decide whether a terminal connection may proceed.
+
+    Returns None when the connection is allowed, otherwise a short reason. This
+    runs before the socket is accepted, so a rejected client never reaches a shell.
+    """
+    if not TERMINAL_ENABLED:
+        return "terminal is disabled (set AIRMON_GUI_TERMINAL_ENABLED)"
+    if os.geteuid() == 0 and not ALLOW_TERMINAL_AS_ROOT:
+        return "refusing to open a root shell (set AIRMON_GUI_ALLOW_TERMINAL_AS_ROOT to override)"
+    # A browser always sends Origin; a foreign page would carry its own origin and
+    # be rejected here, which is what blocks cross-site WebSocket hijack. Non-browser
+    # clients omit Origin and are gated by the token alone.
+    if origin is not None and origin not in ALLOWED_WS_ORIGINS:
+        return "origin not allowed"
+    if not token or not hmac.compare_digest(token, AUTH_TOKEN):
+        return "missing or invalid token"
+    return None
+
+
+def _token_from_subprotocols(websocket: WebSocket) -> str | None:
+    protocols = websocket.scope.get("subprotocols") or []
+    # Expected: [_WS_SUBPROTOCOL, "<token>"]
+    if len(protocols) >= 2 and protocols[0] == _WS_SUBPROTOCOL:
+        return protocols[1]
+    return None
+
 
 @router.websocket("/ws/terminal")
 async def terminal_endpoint(websocket: WebSocket) -> None:
-    await websocket.accept()
+    reason = terminal_gate(
+        websocket.headers.get("origin"), _token_from_subprotocols(websocket)
+    )
+    if reason is not None:
+        # 1008 = policy violation. Closed before accept(), so no shell is spawned.
+        await websocket.close(code=1008, reason=reason)
+        return
+
+    await websocket.accept(subprotocol=_WS_SUBPROTOCOL)
 
     # Create a pseudoterminal pair
     master_fd, slave_fd = pty.openpty()
 
-    # Inherit a clean environment; force a 256-colour TERM so xterm.js renders correctly
-    env = {**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor"}
+    # Start from a minimal environment rather than inheriting the server's, which
+    # under `sudo -E` can carry secrets. Force a 256-colour TERM for xterm.js.
+    env = {
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "PATH": os.environ.get("PATH", "/usr/sbin:/usr/bin:/sbin:/bin"),
+        "HOME": os.environ.get("HOME", "/root"),
+        "LANG": os.environ.get("LANG", "C.UTF-8"),
+    }
 
     # preexec_fn runs in the child process before exec
     def _child_setup() -> None:

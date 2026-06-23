@@ -16,6 +16,7 @@ from app.config import (
     AUTH_TOKEN_FROM_ENV,
     CAPTURE_DIR,
     CORS_ORIGINS,
+    TERMINAL_ENABLED,
     is_loopback_host,
 )
 from app.models import HealthResponse
@@ -145,7 +146,8 @@ app = FastAPI(
         "networks you own or are explicitly authorized to test.\n\n"
         "### Interactive docs\n"
         "Swagger UI at `/docs`, ReDoc at `/redoc`, raw schema at `/openapi.json`. An interactive "
-        "terminal is available over a WebSocket at `/ws/terminal` (not part of the HTTP schema)."
+        "terminal over a WebSocket at `/ws/terminal` is disabled by default; enable it with "
+        "`AIRMON_GUI_TERMINAL_ENABLED` and connect with a valid token (not part of the HTTP schema)."
     ),
     version="0.2.0",
     openapi_tags=_TAGS,
@@ -174,7 +176,11 @@ app.include_router(aireplay.router, prefix="/api", dependencies=_auth)
 app.include_router(aircrack.router, prefix="/api", dependencies=_auth)
 app.include_router(captures.router, prefix="/api", dependencies=_auth)
 app.include_router(handshake.router, prefix="/api", dependencies=_auth)
-app.include_router(terminal.router)  # WebSocket route — no /api prefix needed
+
+# The terminal is an arbitrary-command shell. Register it only when explicitly
+# enabled; the route itself still checks the token, Origin, and root state.
+if TERMINAL_ENABLED:
+    app.include_router(terminal.router)  # WebSocket route — no /api prefix needed
 
 
 @app.get(

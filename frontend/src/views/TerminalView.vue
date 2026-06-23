@@ -26,8 +26,10 @@
     <div class="shrink-0 mx-4 mt-3 rounded-lg border border-amber-600/30 bg-amber-950/30 px-4 py-2.5 text-xs text-amber-300 flex items-start gap-2">
       <span class="shrink-0 mt-0.5">&#9888;</span>
       <span>
-        This terminal opens a shell with the same privileges as the backend process (typically root).
-        Use only on trusted networks. Do not expose the backend port externally.
+        This terminal opens a shell with the same privileges as the backend process.
+        It is disabled by default: start the backend with <code>AIRMON_GUI_TERMINAL_ENABLED=1</code> to allow it,
+        and it stays closed while the backend runs as root unless you also set <code>AIRMON_GUI_ALLOW_TERMINAL_AS_ROOT=1</code>.
+        Use only on trusted machines.
       </span>
     </div>
 
@@ -59,6 +61,7 @@ import { onMounted, onUnmounted, nextTick, ref } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
+import { getToken } from '../composables/useAuth.js'
 
 const terminalEl = ref(null)
 const connected = ref(false)
@@ -147,7 +150,9 @@ function connect() {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const wsUrl = `${proto}//${window.location.host}/ws/terminal`
 
-  socket = new WebSocket(wsUrl)
+  // The browser cannot set headers on a WebSocket, so the token rides as a
+  // second subprotocol value. The server reads it before accepting the socket.
+  socket = new WebSocket(wsUrl, ['airmon-terminal', getToken()])
   socket.binaryType = 'arraybuffer'
 
   socket.onopen = () => {

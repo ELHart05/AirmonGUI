@@ -34,6 +34,19 @@ ALLOWED_WS_ORIGINS: list[str] = [
     if origin.strip()
 ]
 
+
+def _is_truthy(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+# The interactive terminal is an arbitrary-command shell, so it is off unless the
+# operator opts in. Even then it stays closed while the backend runs as root,
+# unless the break-glass flag is also set.
+TERMINAL_ENABLED: bool = _is_truthy(os.environ.get("AIRMON_GUI_TERMINAL_ENABLED", ""))
+ALLOW_TERMINAL_AS_ROOT: bool = _is_truthy(
+    os.environ.get("AIRMON_GUI_ALLOW_TERMINAL_AS_ROOT", "")
+)
+
 # ── Resource limits ─────────────────────────────────────────────────────────--
 # Cap the number of concurrently running tool processes so an authenticated
 # caller cannot exhaust the host with scan/deauth/handshake/crack jobs.

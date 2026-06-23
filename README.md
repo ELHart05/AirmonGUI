@@ -185,7 +185,7 @@ AirmonGUI
 └── website/    Standalone React landing site (optional)
 ```
 
-The backend serves a REST API at `http://127.0.0.1:8000/api` and a terminal WebSocket at `/ws/terminal`. In development the Vite dev server on `:5173` proxies both to the backend.
+The backend serves a REST API at `http://127.0.0.1:8000/api`. An optional terminal WebSocket at `/ws/terminal` is disabled by default (see below). In development the Vite dev server on `:5173` proxies both to the backend.
 
 <details>
 <summary>API reference</summary>
@@ -194,9 +194,12 @@ The backend serves a REST API at `http://127.0.0.1:8000/api` and a terminal WebS
 
 Interactive schemas are at `http://127.0.0.1:8000/docs` (Swagger UI), `/redoc`, and `/openapi.json` while the backend runs.
 
+Every endpoint except `/api/health` requires the `X-Auth-Token` header (see [Quick start](#quick-start) for where the token comes from).
+
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/api/health` | Server health check |
+| GET | `/api/health` | Server health check (no token) |
+| GET | `/api/auth/verify` | Confirm the supplied token is valid |
 | GET | `/api/toolcheck` | Check that the aircrack-ng tools are installed |
 | GET | `/api/interfaces` | List wireless interfaces with MAC and monitor status |
 | POST | `/api/monitor` | Start or stop monitor mode |
@@ -221,7 +224,7 @@ Interactive schemas are at `http://127.0.0.1:8000/docs` (Swagger UI), `/redoc`, 
 | GET | `/api/captures` | List capture files |
 | GET | `/api/captures/cap` | List crackable `.cap`, `.pcap`, and `.ivs` files |
 | DELETE | `/api/captures/{filename}` | Delete a capture file |
-| WS | `/ws/terminal` | Interactive PTY terminal |
+| WS | `/ws/terminal` | Interactive PTY terminal (disabled unless `AIRMON_GUI_TERMINAL_ENABLED=1`) |
 
 </details>
 
