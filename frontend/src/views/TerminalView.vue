@@ -77,7 +77,7 @@ const quickCmds = [
   { label: 'iwconfig', cmd: 'iwconfig\n' },
   { label: 'iw dev', cmd: 'iw dev\n' },
   { label: 'ip link', cmd: 'ip link\n' },
-  { label: 'ls /tmp/airmongui', cmd: 'ls -lh /tmp/airmongui/\n' },
+  { label: 'ls captures', cmd: 'ls -lh /var/lib/airmongui/captures/\n' },
   { label: 'clear', cmd: 'clear\n' },
 ]
 

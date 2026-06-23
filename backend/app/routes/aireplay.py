@@ -22,6 +22,7 @@ from ..utils import (
     enforce_job_quota,
     new_job_id,
     run_command,
+    secure_open,
     set_interface_channel,
     stop_conflicting_airodump_jobs,
 )
@@ -196,7 +197,7 @@ def start_deauth(request: DeauthRequest) -> dict:
     command, iface, channel_result, stopped_scan_jobs = _build_deauth_command(request)
     job_id = new_job_id()
     log_path = os.path.join(CAPTURE_DIR, f"deauth_{job_id}.log")
-    log_handle = open(log_path, "w", encoding="utf-8")  # noqa: WPS515
+    log_handle = secure_open(log_path, "w")
     try:
         process = _start_process(command, log_handle)
     except Exception:
@@ -250,7 +251,7 @@ def _restart_deauth_on_detected_channel(job: dict, log_tail: str) -> bool:
     log_handle = job.get("log_handle")
     if log_handle and not log_handle.closed:
         log_handle.close()
-    log_handle = open(job["log_path"], "a", encoding="utf-8")  # noqa: WPS515
+    log_handle = secure_open(job["log_path"], "a")
     log_handle.write(f"\nDetected AP channel {ap_channel}; retrying deauth on that channel.\n")
     log_handle.flush()
     process = _start_process(command, log_handle)

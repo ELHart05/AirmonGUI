@@ -200,12 +200,60 @@ def sanitize_name(value: str) -> str:
 
 
 def safe_capture_path(name: str) -> str:
-    """Resolve a capture name to an absolute path, preventing directory traversal."""
-    base = os.path.abspath(CAPTURE_DIR)
-    candidate = os.path.abspath(os.path.join(base, name))
-    if not candidate.startswith(base + os.sep):
+    """Resolve a capture name to an absolute path inside the capture directory.
+
+    Rejects traversal that escapes the directory and any name that is (or
+    resolves through) a symlink, so a planted link cannot redirect a root write
+    outside the capture directory.
+    """
+    base = os.path.realpath(CAPTURE_DIR)
+    joined = os.path.join(base, name)
+    if os.path.islink(joined):
+        raise HTTPException(status_code=400, detail="Invalid capture path")
+    candidate = os.path.realpath(joined)
+    if candidate != base and not candidate.startswith(base + os.sep):
         raise HTTPException(status_code=400, detail="Invalid capture path")
     return candidate
+
+
+def ensure_capture_dir(path: str) -> str:
+    """Create the capture directory privately and refuse an unsafe one.
+
+    Run at startup. A symlinked, non-directory, or wrong-owner path is rejected
+    rather than written into as root. The directory is forced to mode 0700.
+    """
+    if os.path.islink(path):
+        raise RuntimeError(f"Capture directory {path!r} is a symlink; refusing to use it.")
+    if os.path.exists(path):
+        if not os.path.isdir(path):
+            raise RuntimeError(f"Capture path {path!r} is not a directory.")
+    else:
+        os.makedirs(path, mode=0o700, exist_ok=True)
+    if os.lstat(path).st_uid != os.geteuid():
+        raise RuntimeError(
+            f"Capture directory {path!r} is not owned by the current user; refusing to use it."
+        )
+    os.chmod(path, 0o700)
+    return path
+
+
+def secure_open(path: str, mode: str = "r", *, encoding: str = "utf-8"):
+    """Open a file without following a final symlink, creating it mode 0600.
+
+    Used for every log and capture-adjacent file the backend writes. O_NOFOLLOW
+    makes a planted symlink fail instead of letting a root write clobber its
+    target; the 0600 mode keeps the contents private.
+    """
+    if "a" in mode:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW
+    elif "w" in mode:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+    else:
+        flags = os.O_RDONLY | os.O_NOFOLLOW
+    fd = os.open(path, flags, 0o600)
+    if "b" in mode:
+        return os.fdopen(fd, mode)
+    return os.fdopen(fd, mode, encoding=encoding)
 
 
 def latest_airodump_path(output_prefix: str, extension: str, start_time: int) -> str:

@@ -23,8 +23,13 @@ from app.models import HealthResponse
 from app.routes import airodump, aireplay, aircrack, captures, handshake, interfaces, terminal
 from app.security import require_token
 from app.state import JOBS
+from app.utils import ensure_capture_dir
 
-os.makedirs(CAPTURE_DIR, exist_ok=True)
+# Captures and logs can hold handshakes, client MACs, and recovered passphrases.
+# Default new files to owner-only (child tools like airodump-ng inherit this), and
+# refuse to start on an unsafe capture directory.
+os.umask(0o077)
+ensure_capture_dir(CAPTURE_DIR)
 
 # Fail closed: refuse to bind a non-loopback address unless the operator set an
 # explicit token. Binding 0.0.0.0 with an auto-generated, console-only token would

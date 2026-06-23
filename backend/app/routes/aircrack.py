@@ -17,7 +17,13 @@ from ..models import (
     ValidateResponse,
 )
 from ..state import JOBS
-from ..utils import command_prefix, enforce_job_quota, new_job_id, safe_capture_path
+from ..utils import (
+    command_prefix,
+    enforce_job_quota,
+    new_job_id,
+    safe_capture_path,
+    secure_open,
+)
 
 
 def _resolve_wordlist(wordlist: str) -> str:
@@ -73,7 +79,8 @@ def _stop_process(process: subprocess.Popen, timeout: int = 10) -> None:
 def _read_log(log_path: str) -> str:
     """Read a log file produced by aircrack-ng, strip control chars, return last 50 lines."""
     try:
-        raw = open(log_path, "rb").read()  # noqa: WPS515
+        with secure_open(log_path, "rb") as handle:
+            raw = handle.read()
     except OSError:
         return ""
     text = raw.decode("utf-8", errors="replace")
@@ -153,7 +160,7 @@ def start_aircrack(request: AircrackRequest) -> dict:
         command += ["-c", request.channel]
     command.append(capture_path)
 
-    log_handle = open(log_path, "wb")  # noqa: WPS515
+    log_handle = secure_open(log_path, "wb")
     try:
         process = _start_process(command, log_handle)
     except Exception:

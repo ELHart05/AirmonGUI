@@ -237,7 +237,10 @@ The backend runs with the defaults below, so you only need these to change them.
 
 | Variable | Default | Description |
 |---|---|---|
-| `AIRMON_GUI_CAPTURE_DIR` | `/tmp/airmongui` | Where capture files are written |
+| `AIRMON_GUI_CAPTURE_DIR` | `/var/lib/airmongui/captures` | Where capture files are written (created 0700; must be a private, owned directory) |
+| `AIRMON_GUI_AUTH_TOKEN` | _(generated)_ | API token. Generated and printed at startup if unset; required to bind off loopback |
+| `AIRMON_GUI_TERMINAL_ENABLED` | `0` | Set to `1` to expose the `/ws/terminal` shell |
+| `AIRMON_GUI_MAX_ACTIVE_JOBS` | `8` | Cap on concurrent tool jobs |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins |
 | `API_HOST` | `127.0.0.1` | Host Uvicorn binds to |
 | `API_PORT` | `8000` | Port Uvicorn listens on |

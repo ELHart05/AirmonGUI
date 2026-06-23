@@ -336,7 +336,7 @@ class CaptureFile(BaseModel):
     """A single file in the capture directory."""
 
     name: str = Field(..., description="File name.", examples=["handshake-OfficeNet-01.cap"])
-    path: str = Field(..., description="Absolute path on the server.", examples=["/tmp/airmongui/handshake-OfficeNet-01.cap"])
+    path: str = Field(..., description="Absolute path on the server.", examples=["/var/lib/airmongui/captures/handshake-OfficeNet-01.cap"])
     size: int = Field(..., description="Size in bytes.", examples=[245678])
     modified: int = Field(..., description="Last-modified time as a Unix timestamp.", examples=[1718881200])
 
@@ -600,7 +600,7 @@ class HandshakeStopResponse(BaseModel):
 
 class CapturesResponse(BaseModel):
     captures: List[CaptureFile]
-    capture_dir: str = Field(..., description="Directory the files were listed from.", examples=["/tmp/airmongui"])
+    capture_dir: str = Field(..., description="Directory the files were listed from.", examples=["/var/lib/airmongui/captures"])
 
 
 class DeleteCaptureResponse(BaseModel):

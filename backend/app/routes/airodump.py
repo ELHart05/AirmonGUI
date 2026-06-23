@@ -22,6 +22,7 @@ from ..utils import (
     parse_airodump_csv,
     safe_capture_path,
     sanitize_name,
+    secure_open,
     set_interface_channel,
 )
 
@@ -129,7 +130,7 @@ def start_airodump(request: AirodumpStartRequest) -> dict:
     if request.bssid:
         command += ["--bssid", request.bssid]
 
-    log_handle = open(log_path, "w", encoding="utf-8")  # noqa: WPS515
+    log_handle = secure_open(log_path, "w")
     try:
         process = subprocess.Popen(command, stdout=log_handle, stderr=log_handle, text=True)
     except Exception:
