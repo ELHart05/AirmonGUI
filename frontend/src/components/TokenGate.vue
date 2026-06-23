@@ -43,7 +43,7 @@ const busy = ref(false)
 const error = ref('')
 
 async function submit() {
-  if (busy.value || !value.trim()) return
+  if (busy.value || !value.value.trim()) return
   busy.value = true
   error.value = ''
   // Store the token first so the verify call carries it, then check it.

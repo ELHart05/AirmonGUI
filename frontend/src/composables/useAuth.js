@@ -11,7 +11,7 @@ export function getToken() {
 }
 
 export function setToken(value) {
-  token.value = (value || '').trim()
+  token.value = String(value ?? '').trim()
   if (token.value) {
     sessionStorage.setItem(STORAGE_KEY, token.value)
   } else {
