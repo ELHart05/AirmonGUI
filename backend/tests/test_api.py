@@ -169,10 +169,13 @@ def test_auth_verify_rejects_missing_token(anon_client):
     assert anon_client.get("/api/auth/verify").status_code == 401
 
 
-def test_auth_status_is_open_and_reports_required(anon_client):
+def test_auth_status_is_open_and_reports_flags(anon_client):
     resp = anon_client.get("/api/auth/status")
     assert resp.status_code == 200
-    assert resp.json()["auth_required"] is True
+    body = resp.json()
+    assert body["auth_required"] is True
+    # terminal_enabled defaults on, so the UI knows to show the tab.
+    assert body["terminal_enabled"] is True
 
 
 def _fake_request(headers=None):

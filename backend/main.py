@@ -210,13 +210,16 @@ def health() -> dict:
 
 @app.get(
     "/api/auth/status",
-    summary="Whether a token is required",
+    summary="UI bootstrap flags",
     tags=["interfaces"],
-    response_description="`{\"auth_required\": true|false}` so the UI knows whether to prompt",
+    response_description=(
+        "`{\"auth_required\": ..., \"terminal_enabled\": ...}` so the UI knows whether to "
+        "prompt for a token and whether to show the terminal tab"
+    ),
 )
 def auth_status() -> dict:
-    """Open endpoint: tells the UI whether to show the unlock screen at all."""
-    return {"auth_required": AUTH_ENABLED}
+    """Open endpoint: tells the UI whether to show the unlock screen and the terminal tab."""
+    return {"auth_required": AUTH_ENABLED, "terminal_enabled": TERMINAL_ENABLED}
 
 
 @app.get(

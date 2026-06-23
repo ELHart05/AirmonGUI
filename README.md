@@ -242,7 +242,7 @@ The backend runs with the defaults below, so you only need these to change them.
 | `AIRMON_GUI_CAPTURE_DIR` | `/var/lib/airmongui/captures` | Where capture files are written (created 0700; must be a private, owned directory) |
 | `AIRMON_GUI_AUTH_ENABLED` | `true` | Set to `false` to drop the token requirement (loopback only) |
 | `AIRMON_GUI_AUTH_TOKEN` | _(generated)_ | API token. Generated and printed at startup if unset; required to bind off loopback |
-| `AIRMON_GUI_TERMINAL_ENABLED` | `1` | Token-gated `/ws/terminal` shell; set to `0` to remove it |
+| `AIRMON_GUI_TERMINAL_ENABLED` | `1` | Token-gated `/ws/terminal` shell; set to `0` to remove the route and hide the tab |
 | `AIRMON_GUI_MAX_ACTIVE_JOBS` | `8` | Cap on concurrent tool jobs |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins |
 | `API_HOST` | `127.0.0.1` | Host Uvicorn binds to |

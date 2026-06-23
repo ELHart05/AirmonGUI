@@ -6,17 +6,20 @@ import { ref } from 'vue'
 const STORAGE_KEY = 'airmon_token'
 const token = ref(sessionStorage.getItem(STORAGE_KEY) || '')
 
-// Whether the backend requires a token at all. Assumed true until /api/auth/status
-// says otherwise, so we never flash an open app before we know.
+// UI bootstrap flags from /api/auth/status. Assume auth is required until we hear
+// otherwise, so we never flash an open app. Terminal stays hidden until the
+// backend confirms it is on.
 const authRequired = ref(true)
 const authChecked = ref(false)
+const terminalEnabled = ref(false)
 
 export function getToken() {
   return token.value
 }
 
-export function setAuthRequired(required) {
-  authRequired.value = !!required
+export function setUiStatus(status = {}) {
+  authRequired.value = status.auth_required !== false
+  terminalEnabled.value = status.terminal_enabled === true
   authChecked.value = true
 }
 
@@ -34,5 +37,5 @@ export function clearToken() {
 }
 
 export function useAuth() {
-  return { token, authRequired, authChecked, setToken, clearToken }
+  return { token, authRequired, authChecked, terminalEnabled, setToken, clearToken }
 }

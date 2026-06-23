@@ -2,10 +2,10 @@
 Tests for the WebSocket terminal gate (issue #1, revised).
 
 The terminal spawns a real shell, so these exercise the gate decision directly
-instead of opening a socket. Defaults changed: the terminal is on by default and,
-when auth is enabled, the token is the gate (a root shell is allowed because the
-token already grants the root-capable API). When auth is disabled, an
-unauthenticated root shell is refused unless the break-glass flag is set.
+instead of opening a socket. AIRMON_GUI_TERMINAL_ENABLED is the single switch.
+Beyond it the gate is silent plumbing: a foreign Origin is always rejected, and
+while auth is enabled the API token is required. With auth off (loopback only) the
+flag and Origin are the gate.
 """
 import os
 
@@ -21,13 +21,11 @@ ORIGIN = "http://localhost:5173"
 
 @pytest.fixture
 def gate(monkeypatch):
-    # Baseline: enabled, auth on, non-root, our origin allowed, real token.
+    # Baseline: enabled, auth on, our origin allowed, real token.
     monkeypatch.setattr(terminal, "TERMINAL_ENABLED", True)
     monkeypatch.setattr(terminal, "AUTH_ENABLED", True)
-    monkeypatch.setattr(terminal, "ALLOW_TERMINAL_AS_ROOT", False)
     monkeypatch.setattr(terminal, "ALLOWED_WS_ORIGINS", [ORIGIN])
     monkeypatch.setattr(terminal, "AUTH_TOKEN", TOKEN)
-    monkeypatch.setattr(os, "geteuid", lambda: 1000)
 
 
 def test_disabled_blocks(gate, monkeypatch):
@@ -55,28 +53,16 @@ def test_rejects_foreign_origin(gate):
     assert terminal.terminal_gate("https://evil.example", TOKEN) is not None
 
 
-def test_auth_on_allows_root(gate, monkeypatch):
-    # With auth on, the token gates the shell, so root is fine.
-    monkeypatch.setattr(os, "geteuid", lambda: 0)
-    assert terminal.terminal_gate(ORIGIN, TOKEN) is None
-
-
-def test_auth_off_allows_non_root(gate, monkeypatch):
+def test_auth_off_allows_without_token(gate, monkeypatch):
+    # With auth off the flag and Origin are the gate; no token needed.
     monkeypatch.setattr(terminal, "AUTH_ENABLED", False)
     assert terminal.terminal_gate(ORIGIN, None) is None
 
 
-def test_auth_off_rejects_root_without_breakglass(gate, monkeypatch):
+def test_auth_off_still_rejects_foreign_origin(gate, monkeypatch):
+    # Origin is checked regardless of auth, so a hostile page is still blocked.
     monkeypatch.setattr(terminal, "AUTH_ENABLED", False)
-    monkeypatch.setattr(os, "geteuid", lambda: 0)
-    assert terminal.terminal_gate(ORIGIN, None) is not None
-
-
-def test_auth_off_allows_root_with_breakglass(gate, monkeypatch):
-    monkeypatch.setattr(terminal, "AUTH_ENABLED", False)
-    monkeypatch.setattr(terminal, "ALLOW_TERMINAL_AS_ROOT", True)
-    monkeypatch.setattr(os, "geteuid", lambda: 0)
-    assert terminal.terminal_gate(ORIGIN, None) is None
+    assert terminal.terminal_gate("https://evil.example", None) is not None
 
 
 def test_mounted_route_rejects_tokenless_connect():

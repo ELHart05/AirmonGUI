@@ -87,14 +87,11 @@ ALLOWED_WS_ORIGINS: list[str] = [
     if origin.strip()
 ]
 
-# The interactive terminal is on by default. When auth is enabled the token (and
-# Origin check) gate it, the same token that already gates the root-capable API.
-# When auth is disabled it is an unauthenticated shell, so it refuses to open as
-# root unless the break-glass flag is set.
+# The interactive terminal is on by default. AIRMON_GUI_TERMINAL_ENABLED is the
+# single switch: turn it off and the route is not mounted and the UI hides the
+# tab. While auth is enabled the token (and Origin check) gate the socket, the
+# same token that already guards the root-capable API.
 TERMINAL_ENABLED: bool = _is_truthy(os.environ.get("AIRMON_GUI_TERMINAL_ENABLED", "true"))
-ALLOW_TERMINAL_AS_ROOT: bool = _is_truthy(
-    os.environ.get("AIRMON_GUI_ALLOW_TERMINAL_AS_ROOT", "")
-)
 
 # ── Resource limits ─────────────────────────────────────────────────────────--
 # Cap the number of concurrently running tool processes so an authenticated

@@ -48,7 +48,7 @@ the shell wins over the file. Copy `.env.example` to `.env` to get started, or p
 | `AIRMON_GUI_CAPTURE_DIR` | `/var/lib/airmongui/captures` | Directory for capture, CSV, and log output |
 | `AIRMON_GUI_AUTH_ENABLED` | `true` | Set to `false` to drop the token requirement (loopback only) |
 | `AIRMON_GUI_AUTH_TOKEN` | _(generated)_ | API token; generated and printed at startup if unset |
-| `AIRMON_GUI_TERMINAL_ENABLED` | `1` | Token-gated `/ws/terminal` shell; set to `0` to remove it |
+| `AIRMON_GUI_TERMINAL_ENABLED` | `1` | Token-gated `/ws/terminal` shell; set to `0` to remove the route and hide the tab |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated browser origins allowed by CORS |
 | `API_HOST` | `127.0.0.1` | Uvicorn bind host |
 | `API_PORT` | `8000` | Uvicorn bind port |

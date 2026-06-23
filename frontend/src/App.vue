@@ -69,14 +69,14 @@ import SignalView from './views/SignalView.vue'
 import TerminalView from './views/TerminalView.vue'
 import { api } from './api/index.js'
 import { useNav } from './composables/useNav.js'
-import { useAuth, setAuthRequired } from './composables/useAuth.js'
+import { useAuth, setUiStatus } from './composables/useAuth.js'
 import { useInterfaces } from './composables/useInterfaces.js'
 import { useScan } from './composables/useScan.js'
 import { useCrack } from './composables/useCrack.js'
 import { useHandshake } from './composables/useHandshake.js'
 
 const { currentView, sidebarOpen } = useNav()
-const { token, authRequired, authChecked } = useAuth()
+const { token, authRequired, authChecked, terminalEnabled } = useAuth()
 
 // Show the unlock screen only when the backend requires a token and we have none.
 const needsToken = computed(() => authRequired.value && !token.value)
@@ -98,7 +98,12 @@ const views = {
   logs: LogsView,
 }
 
-const currentComponent = computed(() => views[currentView.value] ?? OverviewView)
+const currentComponent = computed(() => {
+  // The terminal tab is hidden when the backend has it off; guard the view too so
+  // a stale currentView can't render a terminal the backend won't serve.
+  if (currentView.value === 'terminal' && !terminalEnabled.value) return OverviewView
+  return views[currentView.value] ?? OverviewView
+})
 
 let bootstrapped = false
 
@@ -121,9 +126,10 @@ const ready = computed(() => authChecked.value && !needsToken.value)
 onMounted(async () => {
   try {
     const status = await api.authStatus()
-    setAuthRequired(status.auth_required)
+    setUiStatus(status)
   } catch {
-    setAuthRequired(true)
+    // Backend unreachable: assume auth is required and keep the terminal hidden.
+    setUiStatus({ auth_required: true, terminal_enabled: false })
   }
   if (ready.value) bootstrap()
 })
