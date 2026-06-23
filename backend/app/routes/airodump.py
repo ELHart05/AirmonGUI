@@ -16,6 +16,7 @@ from ..state import JOBS
 from ..utils import (
     clean_terminal_output,
     command_prefix,
+    enforce_job_quota,
     latest_airodump_path,
     new_job_id,
     parse_airodump_csv,
@@ -78,6 +79,7 @@ def start_airodump(request: AirodumpStartRequest) -> dict:
     """
     if not request.interface:
         raise HTTPException(status_code=400, detail="Interface is required")
+    enforce_job_quota()
 
     for job in JOBS.values():
         process = job.get("process")

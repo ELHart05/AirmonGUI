@@ -131,6 +131,20 @@ npm run dev
 
 Open http://localhost:5173. The UI only talks to `127.0.0.1:8000`.
 
+On the first connection the UI asks for an API token. The backend prints one to its console at startup, like this:
+
+```
+======================================================================
+AirmonGUI API token (generated for this run):
+
+    Xy3k...long-random-string...
+
+Paste it into the AirmonGUI web UI when prompted.
+======================================================================
+```
+
+Paste that token into the unlock screen. To keep a fixed token across restarts, set `AIRMON_GUI_AUTH_TOKEN` before launching. Every API route except the health check requires this token, which is what keeps a stray local process or a web page you happen to be visiting from driving the wireless tools behind your back. You must set the token explicitly before binding the backend to anything other than `127.0.0.1` — otherwise it refuses to start.
+
 Root is needed because `airmon-ng`, `airodump-ng`, and `aireplay-ng` use raw sockets. Call `.venv/bin/uvicorn` directly rather than plain `uvicorn`, since `sudo` resets `PATH` and would otherwise miss the virtualenv; the `-E` flag keeps any `AIRMON_GUI_*` variables you set. If you'd rather not run the server as root, set up passwordless `sudo` for those specific binaries and adjust `backend/app/utils.py`.
 
 <details>

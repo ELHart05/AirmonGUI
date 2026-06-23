@@ -3,26 +3,58 @@ import signal
 import subprocess
 from contextlib import asynccontextmanager
 
+import sys
+
 import uvicorn
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import API_HOST, API_PORT, CAPTURE_DIR, CORS_ORIGINS
+from app.config import (
+    API_HOST,
+    API_PORT,
+    AUTH_TOKEN,
+    AUTH_TOKEN_FROM_ENV,
+    CAPTURE_DIR,
+    CORS_ORIGINS,
+    is_loopback_host,
+)
 from app.models import HealthResponse
 from app.routes import airodump, aireplay, aircrack, captures, handshake, interfaces, terminal
+from app.security import require_token
 from app.state import JOBS
 
 os.makedirs(CAPTURE_DIR, exist_ok=True)
 
+# Fail closed: refuse to bind a non-loopback address unless the operator set an
+# explicit token. Binding 0.0.0.0 with an auto-generated, console-only token would
+# silently expose the privileged API to the network.
+if not is_loopback_host(API_HOST) and not AUTH_TOKEN_FROM_ENV:
+    raise RuntimeError(
+        f"API_HOST={API_HOST!r} is not loopback. Set AIRMON_GUI_AUTH_TOKEN to an "
+        "explicit secret before exposing the backend off 127.0.0.1, or bind to "
+        "127.0.0.1."
+    )
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """On shutdown, terminate any still-running tool processes and close their logs.
+    """Print the generated token on startup; clean up tool processes on shutdown.
 
     aireplay-ng and aircrack-ng run in their own session (os.setsid), so they do not
     receive a terminal Ctrl-C and would otherwise keep running headless after the
     server stops or reloads.
     """
+    if not AUTH_TOKEN_FROM_ENV:
+        print(
+            "\n" + "=" * 70 + "\n"
+            "AirmonGUI API token (generated for this run):\n\n"
+            f"    {AUTH_TOKEN}\n\n"
+            "Paste it into the AirmonGUI web UI when prompted. Set "
+            "AIRMON_GUI_AUTH_TOKEN to pin a token across restarts.\n"
+            + "=" * 70 + "\n",
+            file=sys.stderr,
+            flush=True,
+        )
     yield
     for job in list(JOBS.values()):
         process = job.get("process")
@@ -130,16 +162,18 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "X-Auth-Token"],
 )
 
-# Mount all route modules under /api
-app.include_router(interfaces.router, prefix="/api")
-app.include_router(airodump.router, prefix="/api")
-app.include_router(aireplay.router, prefix="/api")
-app.include_router(aircrack.router, prefix="/api")
-app.include_router(captures.router, prefix="/api")
-app.include_router(handshake.router, prefix="/api")
+# Every privileged router requires a valid token. The health check and the
+# interactive docs stay open so the UI can confirm the backend is reachable.
+_auth = [Depends(require_token)]
+app.include_router(interfaces.router, prefix="/api", dependencies=_auth)
+app.include_router(airodump.router, prefix="/api", dependencies=_auth)
+app.include_router(aireplay.router, prefix="/api", dependencies=_auth)
+app.include_router(aircrack.router, prefix="/api", dependencies=_auth)
+app.include_router(captures.router, prefix="/api", dependencies=_auth)
+app.include_router(handshake.router, prefix="/api", dependencies=_auth)
 app.include_router(terminal.router)  # WebSocket route — no /api prefix needed
 
 
@@ -153,6 +187,17 @@ app.include_router(terminal.router)  # WebSocket route — no /api prefix needed
 def health() -> dict:
     """Returns `{\"status\": \"ok\", \"version\": \"...\"}` — use this to verify the backend is reachable."""
     return {"status": "ok", "version": "0.2.0"}
+
+
+@app.get(
+    "/api/auth/verify",
+    summary="Verify the API token",
+    tags=["interfaces"],
+    response_description="`{\"ok\": true}` when the supplied X-Auth-Token is valid",
+)
+def auth_verify(_: None = Depends(require_token)) -> dict:
+    """Cheap endpoint the UI calls to confirm a pasted token before unlocking."""
+    return {"ok": True}
 
 
 if __name__ == "__main__":

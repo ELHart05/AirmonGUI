@@ -19,6 +19,7 @@ from ..state import JOBS, JOBS_LOCK
 from ..utils import (
     clean_terminal_output,
     command_prefix,
+    enforce_job_quota,
     new_job_id,
     run_command,
     set_interface_channel,
@@ -191,6 +192,7 @@ def start_deauth(request: DeauthRequest) -> dict:
     Start `aireplay-ng --deauth` as a background job in its own process group so it can
     be cancelled later. Returns immediately with a job id to poll.
     """
+    enforce_job_quota()
     command, iface, channel_result, stopped_scan_jobs = _build_deauth_command(request)
     job_id = new_job_id()
     log_path = os.path.join(CAPTURE_DIR, f"deauth_{job_id}.log")

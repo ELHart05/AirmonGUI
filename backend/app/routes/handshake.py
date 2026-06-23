@@ -18,6 +18,7 @@ from ..state import JOBS
 from ..utils import (
     clean_terminal_output,
     command_prefix,
+    enforce_job_quota,
     new_job_id,
     parse_airodump_csv,
     safe_capture_path,
@@ -136,6 +137,7 @@ def start_handshake_capture(request: HandshakeCaptureRequest) -> dict:
     scan and locks the interface to it before capturing. Poll the status endpoint to
     detect the handshake.
     """
+    enforce_job_quota()
     prefix = request.output_prefix or f"hs_{sanitize_name(request.bssid.replace(':', ''))}"
     output_prefix = safe_capture_path(prefix)
     cap_path = f"{output_prefix}-01.cap"

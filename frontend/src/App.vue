@@ -1,5 +1,6 @@
 <template>
-  <div class="h-screen overflow-hidden flex bg-slate-950 font-sans relative scanlines">
+  <TokenGate v-if="!token" />
+  <div v-else class="h-screen overflow-hidden flex bg-slate-950 font-sans relative scanlines">
     <div class="absolute inset-0 cyber-grid opacity-80 pointer-events-none"></div>
     <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(0,217,255,0.08),_transparent_42%),radial-gradient(ellipse_at_bottom_right,_rgba(0,255,102,0.035),_transparent_36%)] pointer-events-none"></div>
     <!-- Mobile backdrop -->
@@ -48,10 +49,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { Menu } from 'lucide-vue-next'
 import AppSidebar from './components/AppSidebar.vue'
 import ToastContainer from './components/ToastContainer.vue'
+import TokenGate from './components/TokenGate.vue'
 import OverviewView from './views/OverviewView.vue'
 import MonitorView from './views/MonitorView.vue'
 import ScanView from './views/ScanView.vue'
@@ -63,12 +65,14 @@ import CapturesView from './views/CapturesView.vue'
 import SignalView from './views/SignalView.vue'
 import TerminalView from './views/TerminalView.vue'
 import { useNav } from './composables/useNav.js'
+import { useAuth } from './composables/useAuth.js'
 import { useInterfaces } from './composables/useInterfaces.js'
 import { useScan } from './composables/useScan.js'
 import { useCrack } from './composables/useCrack.js'
 import { useHandshake } from './composables/useHandshake.js'
 
 const { currentView, sidebarOpen } = useNav()
+const { token } = useAuth()
 const { refresh: refreshInterfaces } = useInterfaces()
 const { resume: resumeScan } = useScan()
 const { resume: resumeCrack } = useCrack()
@@ -89,13 +93,27 @@ const views = {
 
 const currentComponent = computed(() => views[currentView.value] ?? OverviewView)
 
-onMounted(async () => {
+let bootstrapped = false
+
+async function bootstrap() {
+  if (bootstrapped) return
+  bootstrapped = true
   await refreshInterfaces()
   await Promise.all([
     resumeScan(),
     resumeCrack(),
     resumeHandshake(),
   ])
+}
+
+// Load data only once we have a token, so no unauthenticated calls fire on the
+// unlock screen. Runs on first mount if already unlocked, or when the user
+// connects.
+onMounted(() => {
+  if (token.value) bootstrap()
+})
+watch(token, (value) => {
+  if (value) bootstrap()
 })
 </script>
 
