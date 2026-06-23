@@ -6,7 +6,7 @@ import time
 
 from fastapi import APIRouter, HTTPException, Path, Query
 
-from ..config import CAPTURE_DIR
+from ..config import CAPTURE_DIR, WORDLIST_DIRS
 from ..models import (
     AircrackRequest,
     CrackJobsResponse,
@@ -17,7 +17,31 @@ from ..models import (
     ValidateResponse,
 )
 from ..state import JOBS
-from ..utils import command_prefix, new_job_id, safe_capture_path
+from ..utils import command_prefix, enforce_job_quota, new_job_id, safe_capture_path
+
+
+def _resolve_wordlist(wordlist: str) -> str:
+    """Confine a caller-supplied wordlist to an allowed directory.
+
+    Without this, the crack endpoint leaks whether any path on the host exists
+    (404 vs 200), and lets aircrack-ng read arbitrary files as root. The path
+    must be absolute and resolve inside a configured wordlist directory or the
+    capture directory.
+    """
+    if not os.path.isabs(wordlist):
+        raise HTTPException(status_code=400, detail="Wordlist must be an absolute path")
+    resolved = os.path.realpath(wordlist)
+    allowed_roots = [os.path.realpath(root) for root in (WORDLIST_DIRS + [CAPTURE_DIR])]
+    if not any(
+        resolved == root or resolved.startswith(root + os.sep) for root in allowed_roots
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Wordlist must be inside an allowed wordlist directory",
+        )
+    if not os.path.isfile(resolved):
+        raise HTTPException(status_code=404, detail="Wordlist not found")
+    return resolved
 
 router = APIRouter(prefix="/aircrack", tags=["aircrack"])
 
@@ -107,6 +131,7 @@ def start_aircrack(request: AircrackRequest) -> dict:
         process = job.get("process")
         if job.get("type") == "crack" and process and process.poll() is None:
             raise HTTPException(status_code=409, detail="An aircrack-ng job is already running")
+    enforce_job_quota()
 
     # Always confine the capture file to CAPTURE_DIR (safe_capture_path rejects
     # absolute paths and traversal that resolve outside the directory).
@@ -116,11 +141,7 @@ def start_aircrack(request: AircrackRequest) -> dict:
     if not os.path.exists(capture_path):
         raise HTTPException(status_code=404, detail="Capture file not found")
 
-    if not os.path.isabs(request.wordlist):
-        raise HTTPException(status_code=400, detail="Wordlist must be an absolute path")
-    wordlist_path = os.path.normpath(request.wordlist)
-    if not os.path.exists(wordlist_path):
-        raise HTTPException(status_code=404, detail="Wordlist not found")
+    wordlist_path = _resolve_wordlist(request.wordlist)
 
     job_id = new_job_id()
     log_path = os.path.join(CAPTURE_DIR, f"crack_{job_id}.log")

@@ -1,12 +1,16 @@
+import { getToken, clearToken } from '../composables/useAuth.js'
+
 const BASE = '/api'
 
 async function request(path, options = {}) {
   const { body, headers: extraHeaders, ...rest } = options
   const hasBody = body !== undefined
+  const token = getToken()
 
   const res = await fetch(`${BASE}${path}`, {
     headers: {
       ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { 'X-Auth-Token': token } : {}),
       ...extraHeaders,
     },
     body: hasBody ? JSON.stringify(body) : undefined,
@@ -14,6 +18,10 @@ async function request(path, options = {}) {
   })
 
   if (!res.ok) {
+    // A rejected token is no longer useful — drop it so the unlock screen returns.
+    if (res.status === 401) {
+      clearToken()
+    }
     let detail = `HTTP ${res.status}`
     try {
       const err = await res.json()
@@ -29,6 +37,7 @@ async function request(path, options = {}) {
 
 export const api = {
   health: () => request('/health'),
+  verify: () => request('/auth/verify'),
   toolCheck: () => request('/toolcheck'),
 
   interfaces: {

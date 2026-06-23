@@ -9,7 +9,7 @@ from typing import List
 
 from fastapi import HTTPException
 
-from .config import CAPTURE_DIR
+from .config import CAPTURE_DIR, MAX_ACTIVE_JOBS
 from .state import JOBS
 
 _ANSI_RE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
@@ -25,6 +25,27 @@ def command_prefix() -> List[str]:
 
 def new_job_id() -> str:
     return uuid.uuid4().hex
+
+
+def count_active_jobs() -> int:
+    """Number of tool processes currently alive across all job types."""
+    return sum(
+        1
+        for job in JOBS.values()
+        if (process := job.get("process")) and process.poll() is None
+    )
+
+
+def enforce_job_quota() -> None:
+    """Reject a new job once the concurrent-process limit is reached."""
+    if count_active_jobs() >= MAX_ACTIVE_JOBS:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Too many active jobs (limit {MAX_ACTIVE_JOBS}). "
+                "Stop a running job before starting another."
+            ),
+        )
 
 
 def run_command(command: List[str], timeout: int = 60) -> dict:
