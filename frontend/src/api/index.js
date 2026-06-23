@@ -37,6 +37,7 @@ async function request(path, options = {}) {
 
 export const api = {
   health: () => request('/health'),
+  authStatus: () => request('/auth/status'),
   verify: () => request('/auth/verify'),
   toolCheck: () => request('/toolcheck'),
 

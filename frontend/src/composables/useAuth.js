@@ -6,8 +6,18 @@ import { ref } from 'vue'
 const STORAGE_KEY = 'airmon_token'
 const token = ref(sessionStorage.getItem(STORAGE_KEY) || '')
 
+// Whether the backend requires a token at all. Assumed true until /api/auth/status
+// says otherwise, so we never flash an open app before we know.
+const authRequired = ref(true)
+const authChecked = ref(false)
+
 export function getToken() {
   return token.value
+}
+
+export function setAuthRequired(required) {
+  authRequired.value = !!required
+  authChecked.value = true
 }
 
 export function setToken(value) {
@@ -24,5 +34,5 @@ export function clearToken() {
 }
 
 export function useAuth() {
-  return { token, setToken, clearToken }
+  return { token, authRequired, authChecked, setToken, clearToken }
 }

@@ -21,6 +21,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from ..config import (
     ALLOW_TERMINAL_AS_ROOT,
     ALLOWED_WS_ORIGINS,
+    AUTH_ENABLED,
     AUTH_TOKEN,
     TERMINAL_ENABLED,
 )
@@ -43,15 +44,21 @@ def terminal_gate(origin: str | None, token: str | None) -> str | None:
     """
     if not TERMINAL_ENABLED:
         return "terminal is disabled (set AIRMON_GUI_TERMINAL_ENABLED)"
-    if os.geteuid() == 0 and not ALLOW_TERMINAL_AS_ROOT:
-        return "refusing to open a root shell (set AIRMON_GUI_ALLOW_TERMINAL_AS_ROOT to override)"
     # A browser always sends Origin; a foreign page would carry its own origin and
     # be rejected here, which is what blocks cross-site WebSocket hijack. Non-browser
     # clients omit Origin and are gated by the token alone.
     if origin is not None and origin not in ALLOWED_WS_ORIGINS:
         return "origin not allowed"
-    if not token or not hmac.compare_digest(token, AUTH_TOKEN):
-        return "missing or invalid token"
+    if AUTH_ENABLED:
+        # The token already gates the whole root-capable API, so a token holder
+        # opening a root shell is no new exposure.
+        if not token or not hmac.compare_digest(token, AUTH_TOKEN):
+            return "missing or invalid token"
+    else:
+        # No token gate at all: an unauthenticated root shell is the original
+        # vulnerability, so refuse it unless the break-glass flag is set.
+        if os.geteuid() == 0 and not ALLOW_TERMINAL_AS_ROOT:
+            return "refusing an unauthenticated root shell (set AIRMON_GUI_ALLOW_TERMINAL_AS_ROOT to override)"
     return None
 
 

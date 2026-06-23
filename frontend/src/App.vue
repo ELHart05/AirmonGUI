@@ -1,5 +1,8 @@
 <template>
-  <TokenGate v-if="!token" />
+  <div v-if="!authChecked" class="h-screen w-screen flex items-center justify-center bg-slate-950 text-slate-500 text-sm">
+    Connecting…
+  </div>
+  <TokenGate v-else-if="needsToken" />
   <div v-else class="h-screen overflow-hidden flex bg-slate-950 font-sans relative scanlines">
     <div class="absolute inset-0 cyber-grid opacity-80 pointer-events-none"></div>
     <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(0,217,255,0.08),_transparent_42%),radial-gradient(ellipse_at_bottom_right,_rgba(0,255,102,0.035),_transparent_36%)] pointer-events-none"></div>
@@ -64,15 +67,19 @@ import LogsView from './views/LogsView.vue'
 import CapturesView from './views/CapturesView.vue'
 import SignalView from './views/SignalView.vue'
 import TerminalView from './views/TerminalView.vue'
+import { api } from './api/index.js'
 import { useNav } from './composables/useNav.js'
-import { useAuth } from './composables/useAuth.js'
+import { useAuth, setAuthRequired } from './composables/useAuth.js'
 import { useInterfaces } from './composables/useInterfaces.js'
 import { useScan } from './composables/useScan.js'
 import { useCrack } from './composables/useCrack.js'
 import { useHandshake } from './composables/useHandshake.js'
 
 const { currentView, sidebarOpen } = useNav()
-const { token } = useAuth()
+const { token, authRequired, authChecked } = useAuth()
+
+// Show the unlock screen only when the backend requires a token and we have none.
+const needsToken = computed(() => authRequired.value && !token.value)
 const { refresh: refreshInterfaces } = useInterfaces()
 const { resume: resumeScan } = useScan()
 const { resume: resumeCrack } = useCrack()
@@ -106,13 +113,23 @@ async function bootstrap() {
   ])
 }
 
-// Load data only once we have a token, so no unauthenticated calls fire on the
-// unlock screen. Runs on first mount if already unlocked, or when the user
-// connects.
-onMounted(() => {
-  if (token.value) bootstrap()
+// True once we know auth state and either have a token or auth is off.
+const ready = computed(() => authChecked.value && !needsToken.value)
+
+// Ask the backend whether a token is needed before deciding what to show. If the
+// call fails we assume auth is required (safer) and let the unlock screen handle it.
+onMounted(async () => {
+  try {
+    const status = await api.authStatus()
+    setAuthRequired(status.auth_required)
+  } catch {
+    setAuthRequired(true)
+  }
+  if (ready.value) bootstrap()
 })
-watch(token, (value) => {
+
+// Bootstrap once the app becomes reachable (token entered, or auth turned off).
+watch(ready, (value) => {
   if (value) bootstrap()
 })
 </script>

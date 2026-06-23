@@ -27,9 +27,13 @@
       <span class="shrink-0 mt-0.5">&#9888;</span>
       <span>
         This terminal opens a shell with the same privileges as the backend process.
-        It is disabled by default: start the backend with <code>AIRMON_GUI_TERMINAL_ENABLED=1</code> to allow it,
-        and it stays closed while the backend runs as root unless you also set <code>AIRMON_GUI_ALLOW_TERMINAL_AS_ROOT=1</code>.
-        Use only on trusted machines.
+        <template v-if="authRequired">
+          It is gated by your API token — the same one that unlocks the app — and by the allowed Origin.
+        </template>
+        <template v-else>
+          Auth is off, so it is gated by the allowed Origin alone and refuses to open as root unless you set <code>AIRMON_GUI_ALLOW_TERMINAL_AS_ROOT=1</code>.
+        </template>
+        Turn it off with <code>AIRMON_GUI_TERMINAL_ENABLED=0</code>. Use only on trusted machines.
       </span>
     </div>
 
@@ -61,8 +65,9 @@ import { onMounted, onUnmounted, nextTick, ref } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import { getToken } from '../composables/useAuth.js'
+import { getToken, useAuth } from '../composables/useAuth.js'
 
+const { authRequired } = useAuth()
 const terminalEl = ref(null)
 const connected = ref(false)
 const connecting = ref(false)

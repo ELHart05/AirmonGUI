@@ -36,18 +36,24 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-The app reads settings from the process environment, not from a `.env` file. The defaults
-work out of the box; to change them, export the variables before starting the server. See
-`.env.example` for the full list of variable names and defaults.
+Settings come from environment variables. On startup the backend also loads `backend/.env`
+if present, so you can drop values there instead of exporting them; a variable already set in
+the shell wins over the file. Copy `.env.example` to `.env` to get started, or point
+`AIRMON_GUI_ENV_FILE` at another path (set it empty to skip the file entirely).
 
 ## Configuration
 
 | Variable | Default | Description |
 |---|---|---|
-| `AIRMON_GUI_CAPTURE_DIR` | `/tmp/airmongui` | Directory for capture, CSV, and log output |
+| `AIRMON_GUI_CAPTURE_DIR` | `/var/lib/airmongui/captures` | Directory for capture, CSV, and log output |
+| `AIRMON_GUI_AUTH_ENABLED` | `true` | Set to `false` to drop the token requirement (loopback only) |
+| `AIRMON_GUI_AUTH_TOKEN` | _(generated)_ | API token; generated and printed at startup if unset |
+| `AIRMON_GUI_TERMINAL_ENABLED` | `1` | Token-gated `/ws/terminal` shell; set to `0` to remove it |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated browser origins allowed by CORS |
 | `API_HOST` | `127.0.0.1` | Uvicorn bind host |
 | `API_PORT` | `8000` | Uvicorn bind port |
+
+See `.env.example` for the full list, including the resource limits and wordlist directories.
 
 ## Running
 
