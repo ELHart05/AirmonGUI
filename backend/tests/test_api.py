@@ -8,27 +8,9 @@ and none start a real airodump/aireplay/aircrack job, so they are safe in CI.
 import os
 
 import pytest
-from fastapi.testclient import TestClient
 
-import main
-
-TOKEN = os.environ["AIRMON_GUI_AUTH_TOKEN"]
-
-
-@pytest.fixture(scope="module")
-def client():
-    # The context manager runs the app lifespan (startup and shutdown).
-    # An authenticated client: it carries a valid token on every request.
-    with TestClient(main.app) as test_client:
-        test_client.headers.update({"X-Auth-Token": TOKEN})
-        yield test_client
-
-
-@pytest.fixture(scope="module")
-def anon_client():
-    # No token — used to prove the auth boundary rejects unauthenticated callers.
-    with TestClient(main.app) as test_client:
-        yield test_client
+# `client` and `anon_client` fixtures live in conftest.py so every test module
+# can share them.
 
 
 # ── Liveness and schema ───────────────────────────────────────────────────────

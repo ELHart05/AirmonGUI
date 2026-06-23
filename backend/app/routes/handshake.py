@@ -23,6 +23,7 @@ from ..utils import (
     parse_airodump_csv,
     safe_capture_path,
     sanitize_name,
+    secure_open,
     set_interface_channel,
     stop_conflicting_airodump_jobs,
 )
@@ -138,7 +139,11 @@ def start_handshake_capture(request: HandshakeCaptureRequest) -> dict:
     detect the handshake.
     """
     enforce_job_quota()
-    prefix = request.output_prefix or f"hs_{sanitize_name(request.bssid.replace(':', ''))}"
+    prefix = (
+        sanitize_name(request.output_prefix)
+        if request.output_prefix
+        else f"hs_{sanitize_name(request.bssid.replace(':', ''))}"
+    )
     output_prefix = safe_capture_path(prefix)
     cap_path = f"{output_prefix}-01.cap"
     csv_path = f"{output_prefix}-01.csv"
@@ -182,7 +187,7 @@ def start_handshake_capture(request: HandshakeCaptureRequest) -> dict:
         request.interface,
     ]
 
-    log_handle = open(log_path, "w", encoding="utf-8")  # noqa: WPS515
+    log_handle = secure_open(log_path, "w")
     try:
         process = subprocess.Popen(command, stdout=log_handle, stderr=log_handle, text=True)
     except Exception:

@@ -1,4 +1,5 @@
 import os
+from stat import S_ISREG
 
 from fastapi import APIRouter, HTTPException, Path
 
@@ -21,9 +22,11 @@ def list_captures() -> dict:
         if name.endswith((".cap", ".csv", ".pcap", ".ivs", ".log")):
             full = os.path.join(CAPTURE_DIR, name)
             try:
-                stat = os.stat(full)
+                stat = os.lstat(full)
             except OSError:
-                continue  # file vanished between listdir and stat
+                continue  # file vanished between listdir and lstat
+            if not S_ISREG(stat.st_mode):
+                continue  # skip symlinks and anything that is not a regular file
             items.append(
                 {
                     "name": name,
@@ -48,9 +51,11 @@ def list_cap_files() -> dict:
         if name.endswith((".cap", ".pcap", ".ivs")):
             full = os.path.join(CAPTURE_DIR, name)
             try:
-                stat = os.stat(full)
+                stat = os.lstat(full)
             except OSError:
-                continue  # file vanished between listdir and stat
+                continue  # file vanished between listdir and lstat
+            if not S_ISREG(stat.st_mode):
+                continue  # skip symlinks and anything that is not a regular file
             items.append(
                 {
                     "name": name,
@@ -84,8 +89,12 @@ def delete_capture(
     if "/" in filename or "\\" in filename or filename.startswith("."):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
-    abs_dir = os.path.abspath(CAPTURE_DIR)
-    abs_path = os.path.abspath(os.path.join(abs_dir, filename))
+    abs_dir = os.path.realpath(CAPTURE_DIR)
+    joined = os.path.join(abs_dir, filename)
+    # Reject a symlink outright so deletion cannot be redirected through one.
+    if os.path.islink(joined):
+        raise HTTPException(status_code=400, detail="Path traversal detected")
+    abs_path = os.path.realpath(joined)
     if not abs_path.startswith(abs_dir + os.sep):
         raise HTTPException(status_code=400, detail="Path traversal detected")
 
@@ -93,7 +102,7 @@ def delete_capture(
     if not any(filename.endswith(ext) for ext in allowed_exts):
         raise HTTPException(status_code=400, detail="File type not allowed")
 
-    if not os.path.exists(abs_path):
+    if not os.path.isfile(abs_path):
         raise HTTPException(status_code=404, detail="File not found")
 
     os.remove(abs_path)

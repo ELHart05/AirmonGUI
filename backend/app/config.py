@@ -1,7 +1,10 @@
 import os
 import secrets
 
-CAPTURE_DIR: str = os.environ.get("AIRMON_GUI_CAPTURE_DIR", "/tmp/airmongui")
+# Default off world-writable /tmp. /tmp/airmongui let a local user pre-create the
+# directory (or plant symlinks) before the root backend started, and left captures
+# world-readable. A private, root-owned state dir avoids both.
+CAPTURE_DIR: str = os.environ.get("AIRMON_GUI_CAPTURE_DIR", "/var/lib/airmongui/captures")
 CORS_ORIGINS: list[str] = os.environ.get(
     "CORS_ORIGINS", "http://localhost:5173"
 ).split(",")
