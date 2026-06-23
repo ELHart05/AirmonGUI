@@ -143,7 +143,9 @@ Paste it into the AirmonGUI web UI when prompted.
 ======================================================================
 ```
 
-Paste that token into the unlock screen. To keep a fixed token across restarts, set `AIRMON_GUI_AUTH_TOKEN` before launching. Every API route except the health check requires this token, which is what keeps a stray local process or a web page you happen to be visiting from driving the wireless tools behind your back. You must set the token explicitly before binding the backend to anything other than `127.0.0.1` — otherwise it refuses to start.
+Paste that token into the unlock screen. To keep a fixed token across restarts, set `AIRMON_GUI_AUTH_TOKEN` in `backend/.env` (the backend loads that file on startup). Every API route except the health check requires this token, which is what keeps a stray local process or a web page you happen to be visiting from driving the wireless tools behind your back. You must set the token explicitly before binding the backend to anything other than `127.0.0.1` — otherwise it refuses to start.
+
+If the prompt is just friction on a single-user box, set `AIRMON_GUI_AUTH_ENABLED=false` to turn auth off entirely; the UI then skips the unlock screen. With auth off the backend refuses to bind anywhere but loopback — point `API_HOST` at something other than `127.0.0.1` and it won't start.
 
 Root is needed because `airmon-ng`, `airodump-ng`, and `aireplay-ng` use raw sockets. Call `.venv/bin/uvicorn` directly rather than plain `uvicorn`, since `sudo` resets `PATH` and would otherwise miss the virtualenv; the `-E` flag keeps any `AIRMON_GUI_*` variables you set. If you'd rather not run the server as root, set up passwordless `sudo` for those specific binaries and adjust `backend/app/utils.py`.
 
@@ -185,7 +187,7 @@ AirmonGUI
 └── website/    Standalone React landing site (optional)
 ```
 
-The backend serves a REST API at `http://127.0.0.1:8000/api`. An optional terminal WebSocket at `/ws/terminal` is disabled by default (see below). In development the Vite dev server on `:5173` proxies both to the backend.
+The backend serves a REST API at `http://127.0.0.1:8000/api` and a terminal WebSocket at `/ws/terminal` (gated by the API token; turn it off with `AIRMON_GUI_TERMINAL_ENABLED=0`). In development the Vite dev server on `:5173` proxies both to the backend.
 
 <details>
 <summary>API reference</summary>
@@ -194,11 +196,12 @@ The backend serves a REST API at `http://127.0.0.1:8000/api`. An optional termin
 
 Interactive schemas are at `http://127.0.0.1:8000/docs` (Swagger UI), `/redoc`, and `/openapi.json` while the backend runs.
 
-Every endpoint except `/api/health` requires the `X-Auth-Token` header (see [Quick start](#quick-start) for where the token comes from).
+While auth is enabled (the default), every endpoint except `/api/health` and `/api/auth/status` requires the `X-Auth-Token` header (see [Quick start](#quick-start) for where the token comes from). In Swagger UI the **Authorize** button sends it for you. With `AIRMON_GUI_AUTH_ENABLED=false` the token is dropped (loopback only).
 
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/api/health` | Server health check (no token) |
+| GET | `/api/auth/status` | Whether auth and the terminal are enabled (no token) |
 | GET | `/api/auth/verify` | Confirm the supplied token is valid |
 | GET | `/api/toolcheck` | Check that the aircrack-ng tools are installed |
 | GET | `/api/interfaces` | List wireless interfaces with MAC and monitor status |
@@ -224,7 +227,7 @@ Every endpoint except `/api/health` requires the `X-Auth-Token` header (see [Qui
 | GET | `/api/captures` | List capture files |
 | GET | `/api/captures/cap` | List crackable `.cap`, `.pcap`, and `.ivs` files |
 | DELETE | `/api/captures/{filename}` | Delete a capture file |
-| WS | `/ws/terminal` | Interactive PTY terminal (disabled unless `AIRMON_GUI_TERMINAL_ENABLED=1`) |
+| WS | `/ws/terminal` | Interactive PTY terminal (on by default; token-gated; disable with `AIRMON_GUI_TERMINAL_ENABLED=0`) |
 
 </details>
 
@@ -233,17 +236,19 @@ Every endpoint except `/api/health` requires the `X-Auth-Token` header (see [Qui
 
 <br/>
 
-The backend runs with the defaults below, so you only need these to change them. Export the variables before starting Uvicorn — they are read from the environment, not auto-loaded from a `.env` file. See `backend/.env.example` for the full list.
+The backend runs with the defaults below, so you only need these to change them. Set them in `backend/.env` (loaded on startup) or export them before starting Uvicorn; an exported variable overrides the file. See `backend/.env.example` for the full list.
 
 | Variable | Default | Description |
 |---|---|---|
 | `AIRMON_GUI_CAPTURE_DIR` | `/var/lib/airmongui/captures` | Where capture files are written (created 0700; must be a private, owned directory) |
+| `AIRMON_GUI_AUTH_ENABLED` | `true` | Set to `false` to drop the token requirement (loopback only) |
 | `AIRMON_GUI_AUTH_TOKEN` | _(generated)_ | API token. Generated and printed at startup if unset; required to bind off loopback |
-| `AIRMON_GUI_TERMINAL_ENABLED` | `0` | Set to `1` to expose the `/ws/terminal` shell |
+| `AIRMON_GUI_TERMINAL_ENABLED` | `1` | Token-gated `/ws/terminal` shell; set to `0` to remove the route and hide the tab |
 | `AIRMON_GUI_MAX_ACTIVE_JOBS` | `8` | Cap on concurrent tool jobs |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins |
 | `API_HOST` | `127.0.0.1` | Host Uvicorn binds to |
 | `API_PORT` | `8000` | Port Uvicorn listens on |
+| `AIRMON_GUI_ENV_FILE` | `backend/.env` | Path to the env file to load; empty string skips loading |
 
 ```bash
 export AIRMON_GUI_CAPTURE_DIR=/home/user/captures
@@ -263,6 +268,12 @@ sudo -E .venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
 | Root privileges | Required by the aircrack-ng tools |
 | Python 3.11+ and Node.js 18+ | Backend and frontend toolchains |
 
+## Troubleshooting
+
+**"Could not lock wlan0 to channel N" or a scan with no networks.** The interface is almost always still in managed mode. Monitor mode is what lets the adapter capture and change channels. Enable it from the Monitor tab first (or `airmon-ng start wlan0`), then scan on the monitor interface — often `wlan0mon`, though some drivers keep the original name. The scan refuses a managed interface with this exact hint, and a single-channel scan no longer aborts if the pre-lock cannot be verified, since `airodump-ng` tunes the channel itself.
+
+**Networks show on the first run but not the second.** A leftover monitor interface, or NetworkManager re-claiming the adapter between runs, can leave it in a stuck state. Run `airmon-ng check kill` (the Check Kill button) before scanning, and stop a scan before starting another on the same interface.
+
 ## Roadmap
 
 Help on any of these is welcome. See [Contributing](#contributing).
@@ -272,7 +283,6 @@ Help on any of these is welcome. See [Contributing](#contributing).
 - PMKID capture and attack
 - Client and AP graphs over time
 - The Reports view, finished and exportable
-- Authentication for non-loopback setups
 - A packaged release and install script
 
 Have an idea? [Open an issue](https://github.com/ELHart05/AirmonGUI/issues/new). Feature requests and questions are fine.

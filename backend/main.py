@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import (
     API_HOST,
     API_PORT,
+    AUTH_ENABLED,
     AUTH_TOKEN,
     AUTH_TOKEN_FROM_ENV,
     CAPTURE_DIR,
@@ -31,15 +32,21 @@ from app.utils import ensure_capture_dir
 os.umask(0o077)
 ensure_capture_dir(CAPTURE_DIR)
 
-# Fail closed: refuse to bind a non-loopback address unless the operator set an
-# explicit token. Binding 0.0.0.0 with an auto-generated, console-only token would
-# silently expose the privileged API to the network.
-if not is_loopback_host(API_HOST) and not AUTH_TOKEN_FROM_ENV:
-    raise RuntimeError(
-        f"API_HOST={API_HOST!r} is not loopback. Set AIRMON_GUI_AUTH_TOKEN to an "
-        "explicit secret before exposing the backend off 127.0.0.1, or bind to "
-        "127.0.0.1."
-    )
+# Fail closed when binding off loopback. With auth disabled the API is wide open,
+# so that combination is refused outright. With auth enabled, require an explicit
+# token rather than the auto-generated console-only one.
+if not is_loopback_host(API_HOST):
+    if not AUTH_ENABLED:
+        raise RuntimeError(
+            f"API_HOST={API_HOST!r} is not loopback and auth is disabled. Enable auth "
+            "(AIRMON_GUI_AUTH_ENABLED=true) or bind to 127.0.0.1."
+        )
+    if not AUTH_TOKEN_FROM_ENV:
+        raise RuntimeError(
+            f"API_HOST={API_HOST!r} is not loopback. Set AIRMON_GUI_AUTH_TOKEN to an "
+            "explicit secret before exposing the backend off 127.0.0.1, or bind to "
+            "127.0.0.1."
+        )
 
 
 @asynccontextmanager
@@ -50,7 +57,7 @@ async def lifespan(_app: FastAPI):
     receive a terminal Ctrl-C and would otherwise keep running headless after the
     server stops or reloads.
     """
-    if not AUTH_TOKEN_FROM_ENV:
+    if AUTH_ENABLED and not AUTH_TOKEN_FROM_ENV:
         print(
             "\n" + "=" * 70 + "\n"
             "AirmonGUI API token (generated for this run):\n\n"
@@ -146,13 +153,18 @@ app = FastAPI(
         "poll the matching status or results endpoint, then stop the job when you are done. "
         "Job state is kept in memory and is lost when the server restarts.\n\n"
         "### Authorization and security\n"
-        "This API is meant to run on `127.0.0.1` only. Every tool needs root, so run the "
-        "backend as root or grant passwordless sudo for the specific binaries. Use it only on "
-        "networks you own or are explicitly authorized to test.\n\n"
+        "Every endpoint except `/api/health` and `/api/auth/status` requires the `X-Auth-Token` "
+        "header while `AIRMON_GUI_AUTH_ENABLED` is true (the default). Click **Authorize** and paste "
+        "the token the backend prints on startup; it is then sent on every request you try here. "
+        "Set `AIRMON_GUI_AUTH_ENABLED=false` to drop the requirement (loopback only). "
+        "This API is meant to run on `127.0.0.1`; every tool needs root, so run the backend as root or "
+        "grant passwordless sudo for the specific binaries. Use it only on networks you own or are "
+        "explicitly authorized to test.\n\n"
         "### Interactive docs\n"
         "Swagger UI at `/docs`, ReDoc at `/redoc`, raw schema at `/openapi.json`. An interactive "
-        "terminal over a WebSocket at `/ws/terminal` is disabled by default; enable it with "
-        "`AIRMON_GUI_TERMINAL_ENABLED` and connect with a valid token (not part of the HTTP schema)."
+        "terminal over a WebSocket at `/ws/terminal` is on by default, gated by the API token and "
+        "an allowed Origin; turn it off with `AIRMON_GUI_TERMINAL_ENABLED=0` (the token is not part "
+        "of the HTTP schema)."
     ),
     version="0.2.0",
     openapi_tags=_TAGS,
@@ -198,6 +210,20 @@ if TERMINAL_ENABLED:
 def health() -> dict:
     """Returns `{\"status\": \"ok\", \"version\": \"...\"}` — use this to verify the backend is reachable."""
     return {"status": "ok", "version": "0.2.0"}
+
+
+@app.get(
+    "/api/auth/status",
+    summary="UI bootstrap flags",
+    tags=["interfaces"],
+    response_description=(
+        "`{\"auth_required\": ..., \"terminal_enabled\": ...}` so the UI knows whether to "
+        "prompt for a token and whether to show the terminal tab"
+    ),
+)
+def auth_status() -> dict:
+    """Open endpoint: tells the UI whether to show the unlock screen and the terminal tab."""
+    return {"auth_required": AUTH_ENABLED, "terminal_enabled": TERMINAL_ENABLED}
 
 
 @app.get(

@@ -119,6 +119,27 @@ def _read_interface_channel(iface: str) -> str:
     return ""
 
 
+def interface_mode(iface: str) -> str:
+    """Return the interface type from `iw dev <iface> info`: 'monitor', 'managed', or ''.
+
+    Empty string means it could not be determined (iw missing, interface gone).
+    """
+    try:
+        info = subprocess.run(
+            command_prefix() + ["iw", "dev", iface, "info"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        match = re.search(r"\btype\s+(\w+)", info.stdout + info.stderr, re.IGNORECASE)
+        if match:
+            return match.group(1).lower()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return ""
+
+
 def set_interface_channel(iface: str, channel: str | int, attempts: int = 3) -> dict:
     """Set and verify a wireless interface channel before targeted capture/deauth."""
     target = str(channel).strip()
@@ -162,6 +183,16 @@ def set_interface_channel(iface: str, channel: str | int, attempts: int = 3) -> 
         errors.append(f"Requested channel {target}; readback currently reports channel {current}.")
     elif not current:
         errors.append("Requested channel set could not be verified by iw or iwconfig.")
+
+    # The usual cause is a managed interface: managed mode rejects channel changes
+    # and reports no channel back. Say so instead of a bare "unknown". Only flag
+    # "managed" — an AP/mesh or a renamed monitor VIF can still capture, so don't
+    # mislabel those (matches the scan-start guard in routes/airodump.py).
+    if interface_mode(iface) == "managed":
+        errors.append(
+            f"{iface} is in managed mode, not monitor mode. Enable monitor mode "
+            f"first (usually creates {iface}mon)."
+        )
 
     return {
         "success": False,

@@ -93,7 +93,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   AlertTriangle,
   BarChart2,
@@ -111,12 +111,14 @@ import {
   Zap,
 } from 'lucide-vue-next'
 import { api } from '../api/index.js'
+import { useAuth } from '../composables/useAuth.js'
 import { useCrack } from '../composables/useCrack.js'
 import { useInterfaces } from '../composables/useInterfaces.js'
 import { useNav } from '../composables/useNav.js'
 import { useScan } from '../composables/useScan.js'
 
 const { currentView, navigate, sidebarOpen } = useNav()
+const { terminalEnabled } = useAuth()
 const { loading, refresh, checkKill } = useInterfaces()
 const { isRunning: isScanning } = useScan()
 const { cracking: isCracking } = useCrack()
@@ -124,7 +126,7 @@ const { cracking: isCracking } = useCrack()
 const toolsOk = ref(false)
 const killing = ref(false)
 
-const navItems = [
+const allNavItems = [
   { id: 'overview', icon: LayoutDashboard, label: 'Overview', description: 'Dashboard & quick actions' },
   { id: 'monitor', icon: Radio, label: 'Monitor Mode', description: 'airmon-ng · enable/disable' },
   { id: 'scan', icon: ScanSearch, label: 'Network Scan', description: 'airodump-ng · live capture' },
@@ -136,6 +138,11 @@ const navItems = [
   { id: 'terminal', icon: Terminal, label: 'Terminal', description: 'Integrated PTY shell' },
   { id: 'logs', icon: ScrollText, label: 'Logs', description: 'Command output history' },
 ]
+
+// Drop the Terminal entry when the backend has the shell turned off.
+const navItems = computed(() =>
+  allNavItems.filter((item) => item.id !== 'terminal' || terminalEnabled.value),
+)
 
 async function handleRefresh() {
   await refresh()

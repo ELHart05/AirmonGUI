@@ -1,9 +1,11 @@
 """
-Tests for the WebSocket terminal gate (issue #1).
+Tests for the WebSocket terminal gate (issue #1, revised).
 
 The terminal spawns a real shell, so these exercise the gate decision directly
-instead of opening a socket. The gate is what runs before `accept()`, so proving
-it rejects the unsafe cases is what matters.
+instead of opening a socket. AIRMON_GUI_TERMINAL_ENABLED is the single switch.
+Beyond it the gate is silent plumbing: a foreign Origin is always rejected, and
+while auth is enabled the API token is required. With auth off (loopback only) the
+flag and Origin are the gate.
 """
 import os
 
@@ -18,56 +20,54 @@ ORIGIN = "http://localhost:5173"
 
 
 @pytest.fixture
-def enabled(monkeypatch):
-    # Turn the feature on and run as non-root for the "happy path" checks.
+def gate(monkeypatch):
+    # Baseline: enabled, auth on, our origin allowed, real token.
     monkeypatch.setattr(terminal, "TERMINAL_ENABLED", True)
-    monkeypatch.setattr(terminal, "ALLOW_TERMINAL_AS_ROOT", False)
+    monkeypatch.setattr(terminal, "AUTH_ENABLED", True)
     monkeypatch.setattr(terminal, "ALLOWED_WS_ORIGINS", [ORIGIN])
     monkeypatch.setattr(terminal, "AUTH_TOKEN", TOKEN)
-    monkeypatch.setattr(os, "geteuid", lambda: 1000)
 
 
-def test_disabled_by_default():
-    # With the default config the feature flag is off, regardless of token.
+def test_disabled_blocks(gate, monkeypatch):
+    monkeypatch.setattr(terminal, "TERMINAL_ENABLED", False)
     assert terminal.terminal_gate(ORIGIN, TOKEN) is not None
 
 
-def test_allows_valid_token_and_origin(enabled):
+def test_allows_valid_token_and_origin(gate):
     assert terminal.terminal_gate(ORIGIN, TOKEN) is None
 
 
-def test_allows_non_browser_client_without_origin(enabled):
-    # No Origin header (curl/websocat): the token alone decides.
+def test_allows_non_browser_client_without_origin(gate):
     assert terminal.terminal_gate(None, TOKEN) is None
 
 
-def test_rejects_missing_token(enabled):
+def test_rejects_missing_token(gate):
     assert terminal.terminal_gate(ORIGIN, None) is not None
 
 
-def test_rejects_wrong_token(enabled):
+def test_rejects_wrong_token(gate):
     assert terminal.terminal_gate(ORIGIN, "nope") is not None
 
 
-def test_rejects_foreign_origin(enabled):
-    # A hostile page carries its own origin and is blocked (CSWSH defense).
+def test_rejects_foreign_origin(gate):
     assert terminal.terminal_gate("https://evil.example", TOKEN) is not None
 
 
-def test_rejects_root_without_breakglass(enabled, monkeypatch):
-    monkeypatch.setattr(os, "geteuid", lambda: 0)
-    assert terminal.terminal_gate(ORIGIN, TOKEN) is not None
+def test_auth_off_allows_without_token(gate, monkeypatch):
+    # With auth off the flag and Origin are the gate; no token needed.
+    monkeypatch.setattr(terminal, "AUTH_ENABLED", False)
+    assert terminal.terminal_gate(ORIGIN, None) is None
 
 
-def test_allows_root_with_breakglass(enabled, monkeypatch):
-    monkeypatch.setattr(os, "geteuid", lambda: 0)
-    monkeypatch.setattr(terminal, "ALLOW_TERMINAL_AS_ROOT", True)
-    assert terminal.terminal_gate(ORIGIN, TOKEN) is None
+def test_auth_off_still_rejects_foreign_origin(gate, monkeypatch):
+    # Origin is checked regardless of auth, so a hostile page is still blocked.
+    monkeypatch.setattr(terminal, "AUTH_ENABLED", False)
+    assert terminal.terminal_gate("https://evil.example", None) is not None
 
 
-def test_route_absent_when_disabled():
-    # The router is not even mounted by default, so a connect attempt fails before
-    # any gate logic runs.
+def test_mounted_route_rejects_tokenless_connect():
+    # The route is mounted by default now; a connect with no token is closed by the
+    # gate before any shell is spawned.
     with TestClient(main.app) as client:
         with pytest.raises(Exception):
             with client.websocket_connect("/ws/terminal"):

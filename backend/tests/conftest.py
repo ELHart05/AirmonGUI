@@ -8,6 +8,8 @@ pin a known token and point the capture directory at a private temp dir.
 import os
 import tempfile
 
+# Keep tests hermetic: do not load a developer's backend/.env.
+os.environ["AIRMON_GUI_ENV_FILE"] = ""
 os.environ.setdefault("AIRMON_GUI_AUTH_TOKEN", "test-token-please-change")
 
 _CAPTURE_DIR = os.path.join(tempfile.gettempdir(), "airmongui_test_captures")

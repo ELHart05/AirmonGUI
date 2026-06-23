@@ -6,6 +6,7 @@ endpoints. None of them need the aircrack-ng suite, a wireless adapter, or root,
 and none start a real airodump/aireplay/aircrack job, so they are safe in CI.
 """
 import os
+import types
 
 import pytest
 
@@ -166,6 +167,52 @@ def test_auth_verify_accepts_valid_token(client):
 
 def test_auth_verify_rejects_missing_token(anon_client):
     assert anon_client.get("/api/auth/verify").status_code == 401
+
+
+def test_auth_status_is_open_and_reports_flags(anon_client):
+    resp = anon_client.get("/api/auth/status")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["auth_required"] is True
+    # terminal_enabled defaults on, so the UI knows to show the tab.
+    assert body["terminal_enabled"] is True
+
+
+def _fake_request(headers=None):
+    """Minimal stand-in for a Starlette Request: just a case-insensitive header bag."""
+    from starlette.datastructures import Headers
+
+    return types.SimpleNamespace(headers=Headers(headers or {}))
+
+
+def test_require_token_noop_when_auth_disabled(monkeypatch):
+    # Auth off: a same-origin or no-Origin request passes with no token.
+    from app import security
+
+    monkeypatch.setattr(security, "AUTH_ENABLED", False)
+    assert security.require_token(_fake_request(), x_auth_token=None) is None
+
+
+def test_require_token_rejects_foreign_origin_when_auth_disabled(monkeypatch):
+    # Auth off still blocks a cross-origin browser request (CSRF defense).
+    from fastapi import HTTPException
+
+    from app import security
+
+    monkeypatch.setattr(security, "AUTH_ENABLED", False)
+    request = _fake_request({"origin": "https://evil.example"})
+    with pytest.raises(HTTPException):
+        security.require_token(request, x_auth_token=None)
+
+
+def test_require_token_enforced_when_auth_enabled(monkeypatch):
+    from fastapi import HTTPException
+
+    from app import security
+
+    monkeypatch.setattr(security, "AUTH_ENABLED", True)
+    with pytest.raises(HTTPException):
+        security.require_token(_fake_request(), x_auth_token=None)
 
 
 # ── Wordlist confinement (issue #2) ───────────────────────────────────────────

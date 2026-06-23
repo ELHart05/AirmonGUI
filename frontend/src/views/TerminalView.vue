@@ -22,17 +22,6 @@
       </div>
     </div>
 
-    <!-- Warning banner -->
-    <div class="shrink-0 mx-4 mt-3 rounded-lg border border-amber-600/30 bg-amber-950/30 px-4 py-2.5 text-xs text-amber-300 flex items-start gap-2">
-      <span class="shrink-0 mt-0.5">&#9888;</span>
-      <span>
-        This terminal opens a shell with the same privileges as the backend process.
-        It is disabled by default: start the backend with <code>AIRMON_GUI_TERMINAL_ENABLED=1</code> to allow it,
-        and it stays closed while the backend runs as root unless you also set <code>AIRMON_GUI_ALLOW_TERMINAL_AS_ROOT=1</code>.
-        Use only on trusted machines.
-      </span>
-    </div>
-
     <!-- Terminal — fills remaining space -->
     <div class="flex-1 min-h-0 relative mx-4 my-3 rounded-lg overflow-hidden border border-cyber-500/25 shadow-2xl shadow-cyber-950/30">
       <div
@@ -57,7 +46,7 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, nextTick, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -119,14 +108,27 @@ function buildTerm() {
   fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
   term.open(terminalEl.value)
-  // Defer fit until after the browser has measured the flex layout
-  nextTick(() => fitAddon.fit())
+  // Fit only once the panel has its real width. A single tick can run before the
+  // flex layout settles, leaving xterm sized to a fraction of the width (the
+  // half-width bug); a double rAF waits for an actual paint. The ResizeObserver
+  // re-fits on any later size change.
+  requestAnimationFrame(() => requestAnimationFrame(fitTerm))
 
   term.onData((data) => {
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(new TextEncoder().encode(data))
     }
   })
+}
+
+function fitTerm() {
+  if (!fitAddon || !term || !terminalEl.value) return
+  try {
+    fitAddon.fit()
+  } catch {
+    /* element not measurable yet; the ResizeObserver will retry */
+  }
+  sendResize()
 }
 
 function sendResize() {
@@ -150,9 +152,12 @@ function connect() {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const wsUrl = `${proto}//${window.location.host}/ws/terminal`
 
-  // The browser cannot set headers on a WebSocket, so the token rides as a
-  // second subprotocol value. The server reads it before accepting the socket.
-  socket = new WebSocket(wsUrl, ['airmon-terminal', getToken()])
+  // The browser cannot set headers on a WebSocket, so the token rides as a second
+  // subprotocol value when there is one. With auth off there is no token, and an
+  // empty subprotocol string is illegal (it throws), so send only the name.
+  const authToken = getToken()
+  const protocols = authToken ? ['airmon-terminal', authToken] : ['airmon-terminal']
+  socket = new WebSocket(wsUrl, protocols)
   socket.binaryType = 'arraybuffer'
 
   socket.onopen = () => {
@@ -193,13 +198,10 @@ function disconnect() {
 }
 
 onMounted(() => {
-  buildTerm()
+  // connect() builds the terminal; building here too would dispose and rebuild it.
   connect()
 
-  resizeObserver = new ResizeObserver(() => {
-    fitAddon?.fit()
-    sendResize()
-  })
+  resizeObserver = new ResizeObserver(() => fitTerm())
   resizeObserver.observe(terminalEl.value)
 })
 

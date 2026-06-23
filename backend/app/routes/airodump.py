@@ -17,6 +17,7 @@ from ..utils import (
     clean_terminal_output,
     command_prefix,
     enforce_job_quota,
+    interface_mode,
     latest_airodump_path,
     new_job_id,
     parse_airodump_csv,
@@ -82,6 +83,17 @@ def start_airodump(request: AirodumpStartRequest) -> dict:
         raise HTTPException(status_code=400, detail="Interface is required")
     enforce_job_quota()
 
+    # airodump-ng captures nothing on a managed interface. Catch that up front with
+    # a clear message instead of starting a scan that silently shows no networks.
+    if interface_mode(request.interface) == "managed":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{request.interface} is in managed mode. Enable monitor mode first "
+                "(Monitor tab) — airodump-ng cannot capture on a managed interface."
+            ),
+        )
+
     for job in JOBS.values():
         process = job.get("process")
         if (
@@ -104,16 +116,10 @@ def start_airodump(request: AirodumpStartRequest) -> dict:
     channel_result = None
 
     if request.channel and str(request.channel).strip().isdigit():
+        # Best-effort pre-lock. airodump-ng also tunes the channel via -c below, so
+        # a failed readback here is a warning surfaced to the UI, not a hard error
+        # that blocks the scan (which previously left users with no results).
         channel_result = set_interface_channel(request.interface, request.channel)
-        if not channel_result["success"]:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"Could not lock {request.interface} to channel {channel_result['requested']} "
-                    f"(current: {channel_result['current'] or 'unknown'}). "
-                    f"{channel_result['stderr']}"
-                ).strip(),
-            )
 
     command = command_prefix() + [
         "airodump-ng",

@@ -19,8 +19,8 @@ import termios
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..config import (
-    ALLOW_TERMINAL_AS_ROOT,
     ALLOWED_WS_ORIGINS,
+    AUTH_ENABLED,
     AUTH_TOKEN,
     TERMINAL_ENABLED,
 )
@@ -38,19 +38,23 @@ _WS_SUBPROTOCOL = "airmon-terminal"
 def terminal_gate(origin: str | None, token: str | None) -> str | None:
     """Decide whether a terminal connection may proceed.
 
+    AIRMON_GUI_TERMINAL_ENABLED is the single on/off switch. Past that the gate is
+    silent plumbing: a foreign Origin is always rejected (cross-site WebSocket
+    hijack defense), and while auth is enabled the API token is required — the same
+    token that already guards the root-capable API. With auth off (loopback only)
+    the flag and Origin are the gate.
+
     Returns None when the connection is allowed, otherwise a short reason. This
     runs before the socket is accepted, so a rejected client never reaches a shell.
     """
     if not TERMINAL_ENABLED:
-        return "terminal is disabled (set AIRMON_GUI_TERMINAL_ENABLED)"
-    if os.geteuid() == 0 and not ALLOW_TERMINAL_AS_ROOT:
-        return "refusing to open a root shell (set AIRMON_GUI_ALLOW_TERMINAL_AS_ROOT to override)"
+        return "terminal is disabled (set AIRMON_GUI_TERMINAL_ENABLED=1)"
     # A browser always sends Origin; a foreign page would carry its own origin and
     # be rejected here, which is what blocks cross-site WebSocket hijack. Non-browser
     # clients omit Origin and are gated by the token alone.
     if origin is not None and origin not in ALLOWED_WS_ORIGINS:
         return "origin not allowed"
-    if not token or not hmac.compare_digest(token, AUTH_TOKEN):
+    if AUTH_ENABLED and (not token or not hmac.compare_digest(token, AUTH_TOKEN)):
         return "missing or invalid token"
     return None
 
