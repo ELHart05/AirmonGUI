@@ -74,9 +74,14 @@ Open:
 
 All REST endpoints are under `/api`.
 
+While auth is enabled (the default), every endpoint except `/api/health` and `/api/auth/status`
+needs the `X-Auth-Token` header. Swagger UI's Authorize button sends it for you.
+
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/health` | Backend health and version |
+| `GET /api/health` | Backend health and version (no token) |
+| `GET /api/auth/status` | Whether auth and the terminal are enabled (no token) |
+| `GET /api/auth/verify` | Confirm the supplied token is valid |
 | `GET /api/toolcheck` | Check required aircrack-ng tools |
 | `GET /api/interfaces` | List wireless interfaces |
 | `POST /api/monitor` | Start or stop monitor mode |

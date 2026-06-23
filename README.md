@@ -196,11 +196,12 @@ The backend serves a REST API at `http://127.0.0.1:8000/api` and a terminal WebS
 
 Interactive schemas are at `http://127.0.0.1:8000/docs` (Swagger UI), `/redoc`, and `/openapi.json` while the backend runs.
 
-Every endpoint except `/api/health` requires the `X-Auth-Token` header (see [Quick start](#quick-start) for where the token comes from).
+While auth is enabled (the default), every endpoint except `/api/health` and `/api/auth/status` requires the `X-Auth-Token` header (see [Quick start](#quick-start) for where the token comes from). In Swagger UI the **Authorize** button sends it for you. With `AIRMON_GUI_AUTH_ENABLED=false` the token is dropped (loopback only).
 
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/api/health` | Server health check (no token) |
+| GET | `/api/auth/status` | Whether auth and the terminal are enabled (no token) |
 | GET | `/api/auth/verify` | Confirm the supplied token is valid |
 | GET | `/api/toolcheck` | Check that the aircrack-ng tools are installed |
 | GET | `/api/interfaces` | List wireless interfaces with MAC and monitor status |

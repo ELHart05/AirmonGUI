@@ -8,13 +8,29 @@ The only routes left open are the health check and the interactive docs.
 
 import hmac
 
-from fastapi import Header, HTTPException, Request, status
+from fastapi import HTTPException, Request, Security, status
+from fastapi.security import APIKeyHeader
 
 from .config import AUTH_ENABLED, AUTH_TOKEN, CORS_ORIGINS
 
+# Declared as a security scheme so the OpenAPI schema advertises the header and
+# Swagger UI shows an "Authorize" button that sends it on every try-it-out call.
+# auto_error=False because enforcement lives in require_token below (which also
+# handles the auth-disabled and cross-origin cases), not in the scheme itself.
+api_token_header = APIKeyHeader(
+    name="X-Auth-Token",
+    scheme_name="API token",
+    auto_error=False,
+    description=(
+        "Required on every privileged endpoint while AIRMON_GUI_AUTH_ENABLED is true "
+        "(the default). The backend prints the token to its console on startup; click "
+        "Authorize and paste it here. Ignored when auth is disabled."
+    ),
+)
+
 
 def require_token(
-    request: Request, x_auth_token: str | None = Header(default=None)
+    request: Request, x_auth_token: str | None = Security(api_token_header)
 ) -> None:
     """FastAPI dependency guarding the privileged API.
 
